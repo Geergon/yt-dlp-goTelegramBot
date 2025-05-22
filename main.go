@@ -57,6 +57,7 @@ func main() {
 
 func echo(ctx *ext.Context, update *ext.Update) error {
 	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
+	user := update.EffectiveUser()
 	if err != nil {
 		log.Fatalln("Не вдалося отримати chatID")
 	}
@@ -64,7 +65,7 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 	chatID := update.EffectiveChat().GetID()
 	if chat == nil || chatID != int64(allowedChatId) {
 		// Неавторизований доступ
-		fmt.Println("Неавторизований доступ")
+		fmt.Printf("Неавторизований доступ: %s \n", user.Username)
 		return nil
 	}
 
@@ -78,6 +79,7 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 	}
 	var videoName string
 	var info *yt.VideoInfo
+	var thumbName string
 
 	if isYT {
 		infoYT, err := yt.GetVideoInfo(urlYT)
@@ -87,6 +89,7 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 		if len(urlYT) > 0 || yt.IsUrl(urlYT) {
 			yt.DownloadYTVideo(urlYT, infoYT)
 			videoName = yt.GetVideoName(urlYT, infoYT)
+			thumbName = yt.GetThumb(urlYT, infoYT)
 			info = infoYT
 		}
 	}
@@ -98,6 +101,7 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 		if len(urlTT) > 0 || yt.IsUrl(urlTT) {
 			yt.DownloadTTVideo(urlTT, infoTT)
 			videoName = yt.GetVideoName(urlTT, infoTT)
+			thumbName = yt.GetThumb(urlTT, infoTT)
 			info = infoTT
 		}
 	}
@@ -108,20 +112,56 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 			log.Println("Помилки отриманні інформаії про відео")
 		}
 		if len(urlInsta) > 0 || yt.IsUrl(urlInsta) {
-			yt.DownloadTTVideo(urlInsta, infoInsta)
+			yt.DownloadInstaVideo(urlInsta, infoInsta)
 			videoName = yt.GetVideoName(urlInsta, infoInsta)
+			thumbName = yt.GetThumb(urlInsta, infoInsta)
 			info = infoInsta
 		}
 	}
+
+	file, err := os.Stat(videoName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("Файл %s не існує", videoName)
+			return err
+		} else {
+			return err
+		}
+	}
+	if file.IsDir() {
+		log.Printf("Файл %s це директорія", videoName)
+		return err
+	}
+
 	f, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, videoName)
 	if err != nil {
 		log.Println("Помилка при завантаженні відео")
 		return err
 	}
 
+	thumbFileStat, err := os.Stat(thumbName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("Файл прев'ю %s не існує", thumbName)
+			return err
+		}
+		return err
+	}
+
+	if thumbFileStat.IsDir() {
+		log.Println("Прев'ю це директорія")
+		return err
+	}
+
+	tf, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName)
+	if err != nil {
+		log.Println("Помилка завантаження прев’ю:", err)
+	}
+
 	media := &tg.InputMediaUploadedDocument{
 		File:     f,
 		MimeType: "video/mp4",
+		Thumb:    tf,
 		Attributes: []tg.DocumentAttributeClass{
 			&tg.DocumentAttributeVideo{
 				SupportsStreaming: true,
@@ -143,6 +183,10 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 	err = os.Remove(videoName)
 	if err != nil {
 		log.Printf("Не вдалося видалити файл: %v", err)
+	}
+	err = os.Remove(thumbName)
+	if err != nil {
+		log.Printf("Не вдалося видалити прев’ю: %v", err)
 	}
 	return err
 }

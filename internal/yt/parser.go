@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"os/exec"
 	"regexp"
 )
@@ -50,10 +49,6 @@ func GetVideoInfo(url string) (*VideoInfo, error) {
 }
 
 func GetVideoName(url string, info *VideoInfo) string {
-	path, err := os.Getwd()
-	if err != nil {
-		log.Println("Помилка при отриманні поточної директорії")
-	}
 	videoName := fmt.Sprintf("%s.mp4", info.ID)
-	return fmt.Sprintf("%s/%s", path, videoName)
+	return videoName
 }
