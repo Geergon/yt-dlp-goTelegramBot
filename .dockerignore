@@ -4,3 +4,6 @@ yt-dlp-goTelegramBot
 .git
 .env
 .gitignore
+db/
+appdata/
+subscriptions/
