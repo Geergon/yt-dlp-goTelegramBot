@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  yt-dlp-gotelegrambot:
+    build:
+      context: .
+      dockerfile: Containerfile
+    volumes:
+      - ./downloads:/downloads
+    networks:
+      - yt-dlp
+    container_name: yt-dlp-gotelegrambot
+    depends_on:
+      - ytdl_material
+    environment:
+      APP_ID: ${APP_ID}
+      API_HASH: ${API_HASH}
+      BOT_TOKEN: ${BOT_TOKEN}
+      CHAT_ID: ${CHAT_ID}
+
+  ytdl_material:
+    environment:
+      ytdl_mongodb_connection_string: "mongodb://ytdl-mongo-db:27017"
+      ytdl_use_local_db: "false"
+      write_ytdl_config: "true"
+      allow_subscriptions: false
+      default_file_output: "%(id)s.%(ext)s"
+      file_manager_enabled: false
+      download_only_mode: true
+      use_API_key: true
+      API_key: "f45a3732-5346-4408-8148-b91d24945b01"
+      allow_advanced_download: true
+    restart: always
+    networks:
+      - yt-dlp
+    depends_on:
+      - ytdl-mongo-db
+    volumes:
+      - ./appdata:/app/appdata
+      - ./downloads:/app/audio
+      - ./downloads:/app/video
+      - ./subscriptions:/app/subscriptions
+    ports:
+      - "8998:17442"
+    image: tzahi12345/youtubedl-material:latest
+  ytdl-mongo-db:
+    # If you are using a Raspberry Pi, use mongo:4.4.18
+    image: mongo:4
+    logging:
+      driver: "none"
+    container_name: mongo-db
+    restart: always
+    networks:
+      - yt-dlp
+    volumes:
+      - ./db/:/data/db
+networks:
+  yt-dlp:

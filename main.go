@@ -16,14 +16,9 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Помилка при завантаженні .env файлу")
-	}
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
@@ -47,7 +42,6 @@ func main() {
 
 	dispatcher := client.Dispatcher
 
-	// Функціонал через команду /start (може потім якось дороблю)
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, echo), 1)
 
 	fmt.Printf("Бот (@%s) стартував...\n", client.Self.Username)
