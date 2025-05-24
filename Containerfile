@@ -1,31 +1,30 @@
-FROM golang:1.24.3-alpine
+FROM golang:1.24.3-alpine AS builder
 
-WORKDIR /yt-dlp-goTelegramBot
+WORKDIR /app
 
 COPY go.* ./ 
 
 RUN go mod download
 
-RUN apk --no-cache add \
-  jq \
-  curl \
-  yt-dlp \
-  bash \
-  busybox-suid \
-  dumb-init \
-  cronie
-
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-  -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
-
-RUN echo "0 3 * * * curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp" > /etc/crontabs/root
-
 COPY . .
 
 RUN go build -o main main.go
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+FROM alpine:3.21.3
+
+COPY --from=builder /app/main /app
+
+RUN apk --no-cache add \
+  jq curl \
+  ffmpeg \
+  # attr ca-certificates py3-brotli py3-mutagen py3-pycryptodomex py3-secretstorage py3-websockets yt-dlp-core \
+  bash \
+  dumb-init 
+
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
+  -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["/entrypoint.sh"]
+CMD [ "/app" ]
+
+

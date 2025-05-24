@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	yt "github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
+	"github.com/gotd/td/telegram/uploader"
+	"github.com/gotd/td/tg"
 
 	"github.com/celestix/gotgproto"
 	"github.com/celestix/gotgproto/dispatcher/handlers"
@@ -14,8 +16,6 @@ import (
 	"github.com/celestix/gotgproto/ext"
 	"github.com/celestix/gotgproto/sessionMaker"
 	"github.com/glebarez/sqlite"
-	"github.com/gotd/td/telegram/uploader"
-	"github.com/gotd/td/tg"
 )
 
 func main() {
@@ -23,6 +23,8 @@ func main() {
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
 	}
+
+	yt.ScheduleYtdlpUpdate()
 
 	client, err := gotgproto.NewClient(
 		// Get AppID from https://my.telegram.org/apps
@@ -51,12 +53,14 @@ func main() {
 
 func echo(ctx *ext.Context, update *ext.Update) error {
 	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	user := update.EffectiveUser()
 	if err != nil {
 		log.Fatalln("Не вдалося отримати chatID")
 	}
+
 	chat := update.EffectiveChat()
 	chatID := update.EffectiveChat().GetID()
+	user := update.EffectiveUser()
+
 	if chat == nil || chatID != int64(allowedChatId) {
 		// Неавторизований доступ
 		fmt.Printf("Неавторизований доступ: %s \n", user.Username)
@@ -65,23 +69,37 @@ func echo(ctx *ext.Context, update *ext.Update) error {
 
 	msg := update.EffectiveMessage
 	text := msg.Text
+
 	urlYT, isYT := yt.GetYoutubeURL(text)
+	log.Println(urlYT)
 	urlTT, isTT := yt.GetTikTokURL(text)
 	urlInsta, isInsta := yt.GetInstaURL(text)
 	if err != nil {
 		log.Println("Помилки отриманні інформаії про відео")
 	}
+
 	var videoName string
 	var info *yt.VideoInfo
 	var thumbName string
 
+	loadingMsg, err := ctx.SendMessage(chatID, "Завантаження розпочато...", nil)
+	if err != nil {
+		log.Println("Помилка при надсиланні повідомлення про завантаження:", err)
+		return err
+	}
+
 	if isYT {
 		infoYT, err := yt.GetVideoInfo(urlYT)
 		if err != nil {
-			log.Println("Помилки отриманні інформаії про відео")
+			log.Println("Помилка при отриманні інформаії про відео")
 		}
 		if len(urlYT) > 0 || yt.IsUrl(urlYT) {
-			yt.DownloadYTVideo(urlYT, infoYT)
+			err := yt.DownloadYTVideo(urlYT, infoYT)
+			if err != nil {
+				s := fmt.Sprintf("Помилка при завантаженні відео: %s", err)
+				ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{})
+				return err
+			}
 			videoName = yt.GetVideoName(urlYT, infoYT)
 			thumbName = yt.GetThumb(urlYT, infoYT)
 			info = infoYT

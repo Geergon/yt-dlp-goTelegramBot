@@ -49,6 +49,6 @@ func GetVideoInfo(url string) (*VideoInfo, error) {
 }
 
 func GetVideoName(url string, info *VideoInfo) string {
-	videoName := fmt.Sprintf("/download/%s.mp4", info.ID)
+	videoName := fmt.Sprintf("%s.mp4", info.ID)
 	return videoName
 }
