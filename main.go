@@ -97,7 +97,6 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("logs", sendLogs))
 	dispatcher.AddHandler(handlers.NewCommand("update", updateYtdlp))
 	dispatcher.AddHandler(handlers.NewCommand("download", download))
-	dispatcher.AddHandler(handlers.NewCommand("audio", audio))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -559,33 +558,5 @@ func download(ctx *ext.Context, update *ext.Update) error {
 			log.Printf("Не вдалося видалити прев’ю: %v", err)
 		}
 	}
-	return nil
-}
-
-func audio(ctx *ext.Context, update *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalln("Не вдалося отримати chatID")
-	}
-	chat := update.EffectiveChat()
-	chatID := update.EffectiveChat().GetID()
-	user := update.EffectiveUser()
-
-	if chat == nil || chatID != int64(allowedChatId) {
-		// Неавторизований доступ
-		fmt.Printf("Неавторизований доступ: %s \n", user.Username)
-		return nil
-	}
-
-	msg := update.EffectiveMessage
-	text := msg.Text
-	var isValid bool
-
-	url, _ := yt.GetYoutubeURL(text)
-
-	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
-		return nil
-	}
-	yt.DownloadAudio(url)
 	return nil
 }
