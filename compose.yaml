@@ -2,12 +2,11 @@ version: "3.8"
 
 services:
   yt-dlp-gotelegrambot:
-    # image: geergon/yt-dlp-gotelegrambot:latest
-    build: .
-    volumes:
-      - ./downloads:/downloads
+    image: geergon/yt-dlp-gotelegrambot:latest
     environment:
       APP_ID: ${APP_ID}
       API_HASH: ${API_HASH}
       BOT_TOKEN: ${BOT_TOKEN}
       CHAT_ID: ${CHAT_ID}
+    volumes:
+      - ./config:/config

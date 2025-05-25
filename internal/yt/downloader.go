@@ -95,3 +95,20 @@ func GetThumb(url string, info *VideoInfo) string {
 	}
 	return fmt.Sprintf("%s.jpg", info.ID)
 }
+
+func DownloadAudio(url string) error {
+	cmd := exec.Command("yt-dlp",
+		"-x",
+		"--audio-format", "opus",
+		"--output", "%(id)s.%(ext)s",
+		"--embed-thumbnail",
+		url)
+
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Помилка при завантаженні аудіо: %v", err)
+		return err
+	}
+
+	return nil
+}

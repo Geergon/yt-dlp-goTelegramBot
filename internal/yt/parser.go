@@ -21,13 +21,13 @@ func GetYoutubeURL(text string) (string, bool) {
 }
 
 func GetTikTokURL(text string) (string, bool) {
-	ttr := regexp.MustCompile(`((http(s)?:\/\/)?(www\.|m\.|vm\.)?tiktok\.com\/((h5\/share\/usr\/|v\/|@[A-Za-z0-9_\-]+\/video\/|embed\/|trending\?shareId=|share\/user\/)?[A-Za-z0-9_\-]+\/?))`)
+	ttr := regexp.MustCompile(`((http(s)?:\/\/)?(www\.|m\.|vm\.)?tiktok\.com\/((h5\/share\/usr\/|v\/|@[A-Za-z0-9_\-]+\/video\/|embed\/|trending\?shareId=|share\/user\/)?[A-Za-z0-9_\-]+\/?)(?:\?[^ ]*)?)`)
 	url := ttr.FindString(text)
 	return url, url != ""
 }
 
 func GetInstaURL(text string) (string, bool) {
-	ir := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(reel|p|tv|stories)\/[A-Za-z0-9_\-\.]+`)
+	ir := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(reel|p|tv|stories)\/[A-Za-z0-9_\-\.]+\/?(\?[^ ]*)?(#[^ ]*)?`)
 	url := ir.FindString(text)
 	return url, url != ""
 }
@@ -36,6 +36,7 @@ func GetVideoInfo(url string) (*VideoInfo, error) {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf(`yt-dlp -j "%s" | jq -c '{ID: .id, Title: .fulltitle}'`, url))
 	out, err := cmd.Output()
 	if err != nil {
+		log.Printf("помилка виконання команди: %v", err)
 		return nil, fmt.Errorf("помилка виконання команди: %v", err)
 	}
 
