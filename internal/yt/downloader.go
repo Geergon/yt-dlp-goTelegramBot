@@ -2,6 +2,7 @@ package yt
 
 import (
 	"log"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -25,57 +26,122 @@ func DownloadYTVideo(url string) error {
 	filter := viper.GetString("yt-dlp_filter")
 	viperMutex.RUnlock()
 
-	cmd := exec.Command(
-		"yt-dlp",
-		"-f", filter,
-		"--merge-output-format", "mp4",
-		"-o", "output.%(ext)s",
-		url,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-		return err
-	}
+	cookies := "./cookies/cookiesYT.txt"
+	if _, err := os.Stat(cookies); os.IsNotExist(err) {
+		log.Println("Файл кукі не знайдено")
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", filter,
+			"--merge-output-format", "mp4",
+			"-o", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
+			return err
+		}
 
-	log.Printf("Завантаження %s завершено успішно", url)
-	return nil
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+	} else {
+		log.Println("Файл кукі знайдено")
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", filter,
+			"--cookies", cookies,
+			"--merge-output-format", "mp4",
+			"-o", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
+			return err
+		}
+
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+	}
 }
 
 func DownloadTTVideo(url string) error {
-	cmd := exec.Command(
-		"yt-dlp",
-		"-f", "mp4",
-		"--no-playlist",
-		"--output", "output.%(ext)s",
-		url,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
-		return err
-	}
+	cookies := "./cookies/cookiesTT.txt"
+	if _, err := os.Stat(cookies); os.IsNotExist(err) {
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", "mp4",
+			"--no-playlist",
+			"--output", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
+			return err
+		}
 
-	log.Printf("Завантаження %s завершено успішно", url)
-	return nil
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+	} else {
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", "mp4",
+			"--no-playlist",
+			"--cookies", cookies,
+			"--output", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
+			return err
+		}
+
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+
+	}
 }
 
 func DownloadInstaVideo(url string) error {
-	cmd := exec.Command(
-		"yt-dlp",
-		"-f", "mp4",
-		"--no-playlist",
-		"--output", "output.%(ext)s",
-		url,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("yt-dlp error (Instagram): %v\nOutput: %s", err, string(output))
-		return err
-	}
+	cookies := "./cookies/cookiesINSTA.txt"
 
-	log.Printf("Завантаження %s завершено успішно", url)
-	return nil
+	if _, err := os.Stat(cookies); os.IsNotExist(err) {
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", "mp4",
+			"--no-playlist",
+			"--output", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
+			return err
+		}
+
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+	} else {
+		cmd := exec.Command(
+			"yt-dlp",
+			"-f", "mp4",
+			"--no-playlist",
+			"--cookies", cookies,
+			"--output", "output.%(ext)s",
+			url,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
+			return err
+		}
+
+		log.Printf("Завантаження %s завершено успішно", url)
+		return nil
+
+	}
 }
 
 func GetThumb(url string) string {

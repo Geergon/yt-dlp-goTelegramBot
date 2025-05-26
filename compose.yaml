@@ -12,3 +12,4 @@ services:
     volumes:
       - ./config:/config
       - ./db:/db
+      - ./cookies:/cookies

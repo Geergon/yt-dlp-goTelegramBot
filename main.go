@@ -118,7 +118,12 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\nКоманди:\n/logs - отримати логи\n/update - оновити yt-dlp",
+			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\n
+			Команди:\n
+			/logs - отримати логи\n
+			/update - оновити yt-dlp\n
+			/fragments - завантажити фрагмент відео, 
+			/download - ручне завантаження відео`,
 		})
 		if err != nil {
 			log.Printf("Помилка надсилання повідомлення: %v", err)
@@ -206,8 +211,7 @@ func sendLogs(ctx *ext.Context, update *ext.Update) error {
 	}
 
 	_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
-		Media:   media,
-		Message: "Ось логи",
+		Media: media,
 	})
 	if err != nil {
 		log.Printf("Помилка надсилання файлу логів: %v", err)
@@ -502,6 +506,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
+	var media *tg.InputMediaUploadedDocument
 	thumbName := yt.GetThumb(url)
 	var thumbFile tg.InputFileClass
 	if thumbName != "" {
@@ -510,26 +515,36 @@ func download(ctx *ext.Context, update *ext.Update) error {
 			thumbFile, err = uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName)
 			if err != nil {
 				log.Printf("Помилка завантаження прев’ю: %v", err)
-				thumbFile = nil
 			}
+			media = &tg.InputMediaUploadedDocument{
+				File:     videoFile,
+				MimeType: "video/mp4",
+				Thumb:    thumbFile,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: videoName,
+					},
+				},
+			}
+
 		} else {
 			log.Printf("Прев’ю недоступне або є директорією: %s", thumbName)
-			thumbFile = nil
+			media = &tg.InputMediaUploadedDocument{
+				File:     videoFile,
+				MimeType: "video/mp4",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: videoName,
+					},
+				},
+			}
 		}
-	}
-
-	media := &tg.InputMediaUploadedDocument{
-		File:     videoFile,
-		MimeType: "video/mp4",
-		Thumb:    thumbFile,
-		Attributes: []tg.DocumentAttributeClass{
-			&tg.DocumentAttributeVideo{
-				SupportsStreaming: true,
-			},
-			&tg.DocumentAttributeFilename{
-				FileName: videoName,
-			},
-		},
 	}
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -588,23 +603,29 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 	args := strings.Fields(u.EffectiveMessage.Text)
 	if len(args) != 3 {
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Використання: /fragment <YouTube_URL> <start_time> <end_time>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 00:02:00 00:03:00",
+			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад, який завантажить відео з п'ятої хвилини відео по сьому хвилину: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00 \n Можна вказувати секунди '00:10-00:50' і години '01:01:00-01:03:00'",
 		})
 		return err
 	}
 
-	url := args[1]
-	fragment := args[2]
-
-	var title string
-	info, err := yt.GetVideoInfo(url)
-	if err != nil {
-		title = "Не вдалося отримати назву відео"
-	}
-	title = info.Title
 	sentMsg, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "Обробка посилання: \n[◼◼◻◻◻◻◻◻]",
 	})
+
+	url := args[1]
+	fragment := args[2]
+
+	if strings.Contains(url, "help") {
+		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад, який завантажить відео з п'ятої хвилини відео по сьому хвилину: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00 \nМожна вказувати секунди '00:10-00:50' і години '01:01:00-01:03:00'",
+		})
+	}
+	// var title string
+	// info, err := yt.GetVideoInfo(url)
+	// if err != nil {
+	// 	title = "Не вдалося отримати назву відео"
+	// }
+	// title = info.Title
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
@@ -623,17 +644,12 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		url,
 	)
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Printf("Помилка завантаження фрагменту: %v", err)
-		_, err := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-			ID:      sentMsg.GetID(),
-			Message: "Помилка завантаження фрагменту. Перевірте URL або спробуйте пізніше.",
-		})
-		return err
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("yt-dlp error (TikTok): %v\nOutput: %s", err, string(output))
 	}
+
+	log.Printf("Завантаження %s завершено успішно", url)
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
@@ -662,6 +678,7 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		return err
 	}
 
+	var media *tg.InputMediaUploadedDocument
 	thumbName := yt.GetThumb(url)
 	var thumbFile tg.InputFileClass
 	if thumbName != "" {
@@ -672,24 +689,35 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 				log.Printf("Помилка завантаження прев’ю: %v", err)
 				thumbFile = nil
 			}
+			media = &tg.InputMediaUploadedDocument{
+				File:     videoFile,
+				MimeType: "video/mp4",
+				Thumb:    thumbFile,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: outputFile,
+					},
+				},
+			}
+
 		} else {
 			log.Printf("Прев’ю недоступне або є директорією: %s", thumbName)
-			thumbFile = nil
+			media = &tg.InputMediaUploadedDocument{
+				File:     videoFile,
+				MimeType: "video/mp4",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: outputFile,
+					},
+				},
+			}
 		}
-	}
-
-	media := &tg.InputMediaUploadedDocument{
-		File:     videoFile,
-		MimeType: "video/mp4",
-		Thumb:    thumbFile,
-		Attributes: []tg.DocumentAttributeClass{
-			&tg.DocumentAttributeVideo{
-				SupportsStreaming: true,
-			},
-			&tg.DocumentAttributeFilename{
-				FileName: outputFile,
-			},
-		},
 	}
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -697,9 +725,8 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◼◻]",
 	})
 	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsg.GetID(),
-		Message: title,
-		Media:   media,
+		ID:    sentMsg.GetID(),
+		Media: media,
 	})
 	if err != nil {
 		log.Printf("Помилка відправки медіа: %v", err)
