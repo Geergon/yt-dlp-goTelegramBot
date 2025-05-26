@@ -1,10 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +13,6 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -40,11 +39,6 @@ func init() {
 }
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
@@ -67,6 +61,8 @@ func main() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
 	viper.AddConfigPath("./config")
+	viper.SetDefault("auto_download", true)
+	viper.SetDefault("delete_url", true)
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			log.Println("Конфіг файл не знайдений")
@@ -96,6 +92,7 @@ func main() {
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, echo), 1)
 	dispatcher.AddHandler(handlers.NewCommand("logs", sendLogs))
 	dispatcher.AddHandler(handlers.NewCommand("update", updateYtdlp))
+	dispatcher.AddHandler(handlers.NewCommand("fragment", fragment))
 	dispatcher.AddHandler(handlers.NewCommand("download", download))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
@@ -370,7 +367,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 	}
 
 	sentMsg, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-		Message: "Отримання інформації про відео: \n[◼◼◻◻◻◻◻◻]",
+		Message: "Обробка посилання: \n[◼◼◻◻◻◻◻◻]",
 	})
 	if err != nil {
 		log.Printf("Помилка надсилання повідомлення про початок: %v", err)
@@ -387,14 +384,13 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		if editErr != nil {
 			log.Printf("Помилка редагування повідомлення: %v", editErr)
 		}
-		return err
 	}
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
 		Message: "Завантаження відео: \n[◼◼◼◼◻◻◻◻]",
 	})
-	var downloadFunc func(context.Context, string, *yt.VideoInfo) error
+	var downloadFunc func(string) error
 	switch platform {
 	case "YouTube":
 		downloadFunc = yt.DownloadYTVideo
@@ -406,21 +402,17 @@ func download(ctx *ext.Context, update *ext.Update) error {
 
 	const maxAttempts = 3
 	const retryDelay = 10 * time.Second
-	const timeout = 15 * time.Minute
 
 	var downloadErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		downloadCtx, cancel := context.WithTimeout(context.Background(), timeout)
-		downloadCtx = context.WithValue(downloadCtx, "attempt", attempt)
-		defer cancel()
 
-		downloadErr = downloadFunc(downloadCtx, url, info)
+		downloadErr = downloadFunc(url)
 		if downloadErr == nil {
 			break
 		}
 		log.Printf("Спроба %d завантаження (%s) не вдалася: %v", attempt, platform, downloadErr)
 
-		videoName := yt.GetVideoName(url, info)
+		videoName := "output.mp4"
 		partFile := videoName + ".part"
 		if err := os.Remove(partFile); err != nil && !os.IsNotExist(err) {
 			log.Printf("Не вдалося видалити частковий файл %s: %v", partFile, err)
@@ -449,7 +441,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
 	})
 
-	videoName := yt.GetVideoName(url, info)
+	videoName := "output.mp4"
 	file, err := os.Stat(videoName)
 	if err != nil {
 		logMsg := "Помилка перевірки файлу відео"
@@ -492,7 +484,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
-	thumbName := yt.GetThumb(url, info)
+	thumbName := yt.GetThumb(url)
 	var thumbFile tg.InputFileClass
 	if thumbName != "" {
 		thumbFileStat, err := os.Stat(thumbName)
@@ -526,10 +518,14 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		ID:      sentMsg.GetID(),
 		Message: "Надсилання відео: \n[◼◼◼◼◼◼◼◻]",
 	})
+	title := info.Title
+	if info.Title == "" {
+		title = "Не вдалося отримати назву відео"
+	}
 
 	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
-		Message: info.Title,
+		Message: title,
 		Media:   media,
 	})
 	if err != nil {
@@ -559,4 +555,97 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		}
 	}
 	return nil
+}
+
+func fragment(ctx *ext.Context, u *ext.Update) error {
+	allowedChatId, _ := strconv.Atoi(os.Getenv("CHAT_ID"))
+	chatID := u.EffectiveChat().GetID()
+	if chatID != int64(allowedChatId) {
+		return nil
+	}
+
+	args := strings.Fields(u.EffectiveMessage.Text)
+	if len(args) != 4 {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Використання: /fragment <YouTube_URL> <start_time> <end_time>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 00:02:00 00:03:00",
+		})
+		return err
+	}
+
+	url := args[1]
+	startTime := args[2]
+	endTime := args[3]
+
+	if !isValidTimeFormat(startTime) || !isValidTimeFormat(endTime) {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Неправильний формат часу. Використовуйте HH:MM:SS (наприклад, 00:02:00).",
+		})
+		return err
+	}
+
+	outputFile := "output.mp4"
+	cmd := exec.Command(
+		"yt-dlp",
+		"--external-downloader", "ffmpeg",
+		"--external-downloader-args", fmt.Sprintf("ffmpeg:-ss %s -to %s", startTime, endTime),
+		"--cookies", "./cookies/cookiesYt.txt",
+		"-o", outputFile,
+		"-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+		url,
+	)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Printf("Помилка завантаження фрагменту: %v", err)
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Помилка завантаження фрагменту. Перевірте URL або спробуйте пізніше.",
+		})
+		return err
+	}
+
+	if _, err := os.Stat(outputFile); os.IsNotExist(err) {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Не вдалося завантажити фрагмент. Можливо, відео недоступне.",
+		})
+		return err
+	}
+
+	file, err := os.Open(outputFile)
+	if err != nil {
+		log.Printf("Помилка відкриття файлу: %v", err)
+		return err
+	}
+	defer file.Close()
+
+	videoFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, outputFile)
+	if err != nil {
+		log.Printf("Помилка завантаження відео в Telegram: %v", err)
+		return err
+	}
+
+	media := &tg.InputMediaUploadedDocument{
+		File:     videoFile,
+		MimeType: "video/mp4",
+	}
+
+	_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
+		Media: media,
+	})
+	if err != nil {
+		log.Printf("Помилка відправки медіа: %v", err)
+		return err
+	}
+
+	if err := os.Remove(outputFile); err != nil {
+		log.Printf("Помилка видалення файлу %s: %v", outputFile, err)
+	}
+
+	return err
+}
+
+func isValidTimeFormat(t string) bool {
+	_, err := time.Parse("15:04:05", t)
+	return err == nil
 }

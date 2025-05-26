@@ -49,7 +49,7 @@ func GetVideoInfo(url string) (*VideoInfo, error) {
 	return &info, nil
 }
 
-func GetVideoName(url string, info *VideoInfo) string {
-	videoName := fmt.Sprintf("%s.mp4", info.ID)
-	return videoName
-}
+// func GetVideoName(url string, info *VideoInfo) string {
+// 	videoName := fmt.Sprintf("%s.mp4", info.ID)
+// 	return videoName
+// }

@@ -1,8 +1,6 @@
 package yt
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"os/exec"
 )
@@ -17,23 +15,15 @@ type VideoInfo struct {
 	Title   string `json:"Title"`
 }
 
-func DownloadYTVideo(ctx context.Context, url string, info *VideoInfo) error {
-	formats := []string{
-		"bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/w",
-		"bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]/w", // Менша якість для повторної спроби
-	}
-
-	cmd := exec.CommandContext(ctx,
+func DownloadYTVideo(url string) error {
+	cmd := exec.Command(
 		"yt-dlp",
-		"-f", formats[0],
+		"--cookies", "./cookies/cookiesYt.txt",
+		"-f", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]",
 		"--merge-output-format", "mp4",
-		"-o", "%(id)s.%(ext)s",
+		"-o", "output.%(ext)s",
 		url,
 	)
-	if ctx.Value("attempt") != nil && ctx.Value("attempt").(int) > 1 {
-		cmd.Args[2] = "-f"
-		cmd.Args[3] = formats[1]
-	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
@@ -44,12 +34,12 @@ func DownloadYTVideo(ctx context.Context, url string, info *VideoInfo) error {
 	return nil
 }
 
-func DownloadTTVideo(ctx context.Context, url string, info *VideoInfo) error {
-	cmd := exec.CommandContext(ctx,
+func DownloadTTVideo(url string) error {
+	cmd := exec.Command(
 		"yt-dlp",
 		"-f", "mp4",
 		"--no-playlist",
-		"--output", "%(id)s.%(ext)s",
+		"--output", "output.%(ext)s",
 		url,
 	)
 	output, err := cmd.CombinedOutput()
@@ -62,12 +52,12 @@ func DownloadTTVideo(ctx context.Context, url string, info *VideoInfo) error {
 	return nil
 }
 
-func DownloadInstaVideo(ctx context.Context, url string, info *VideoInfo) error {
-	cmd := exec.CommandContext(ctx,
+func DownloadInstaVideo(url string) error {
+	cmd := exec.Command(
 		"yt-dlp",
 		"-f", "mp4",
 		"--no-playlist",
-		"--output", "%(id)s.%(ext)s",
+		"--output", "output.%(ext)s",
 		url,
 	)
 	output, err := cmd.CombinedOutput()
@@ -80,12 +70,12 @@ func DownloadInstaVideo(ctx context.Context, url string, info *VideoInfo) error 
 	return nil
 }
 
-func GetThumb(url string, info *VideoInfo) string {
+func GetThumb(url string) string {
 	cmd := exec.Command("yt-dlp",
 		"--skip-download",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
-		"--output", "%(id)s.%(ext)s",
+		"--output", "thumb.%(ext)s",
 		url,
 	)
 
@@ -93,5 +83,5 @@ func GetThumb(url string, info *VideoInfo) string {
 	if err != nil {
 		log.Printf("Помилка при отриманні прев'ю: %v", err)
 	}
-	return fmt.Sprintf("%s.jpg", info.ID)
+	return "thumb.jpg"
 }
