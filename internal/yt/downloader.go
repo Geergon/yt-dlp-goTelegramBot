@@ -3,6 +3,9 @@ package yt
 import (
 	"log"
 	"os/exec"
+	"sync"
+
+	"github.com/spf13/viper"
 )
 
 type DownloadRequest struct {
@@ -15,11 +18,16 @@ type VideoInfo struct {
 	Title   string `json:"Title"`
 }
 
+var viperMutex sync.RWMutex
+
 func DownloadYTVideo(url string) error {
+	viperMutex.RLock()
+	filter := viper.GetString("yt-dlp_filter")
+	viperMutex.RUnlock()
+
 	cmd := exec.Command(
 		"yt-dlp",
-		"--cookies", "./cookies/cookiesYt.txt",
-		"-f", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]",
+		"-f", filter,
 		"--merge-output-format", "mp4",
 		"-o", "output.%(ext)s",
 		url,

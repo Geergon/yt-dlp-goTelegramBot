@@ -7,9 +7,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	yt "github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
+	"github.com/fsnotify/fsnotify"
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
@@ -38,6 +40,8 @@ func init() {
 	log.SetOutput(logFile)
 }
 
+var viperMutex sync.RWMutex
+
 func main() {
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
@@ -58,11 +62,16 @@ func main() {
 		log.Fatal("CHAT_ID не задано")
 	}
 
+	viperMutex.Lock()
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
 	viper.AddConfigPath("./config")
 	viper.SetDefault("auto_download", true)
 	viper.SetDefault("delete_url", true)
+	viper.SetDefault("allowed_user", []int{})
+	viper.SetDefault("allowed_chat", []int{})
+	viper.SetDefault("yt-dlp_filter", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]")
+	viper.SafeWriteConfig()
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			log.Println("Конфіг файл не знайдений")
@@ -70,6 +79,18 @@ func main() {
 			log.Printf("Помилка з конфіг файлом: %v", err)
 		}
 	}
+
+	viperMutex.Unlock()
+	viper.WatchConfig()
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		viperMutex.Lock()
+		defer viperMutex.Unlock()
+		log.Printf("Конфігурація змінена: %s", e.Name)
+		if err := viper.ReadInConfig(); err != nil {
+			log.Printf("Помилка перечитування конфігурації: %v", err)
+			return
+		}
+	})
 
 	client, err := gotgproto.NewClient(
 		// Get AppID from https://my.telegram.org/apps
@@ -114,21 +135,24 @@ func main() {
 }
 
 func echo(ctx *ext.Context, update *ext.Update) error {
-	if viper.GetBool("auto_download") {
+	viperMutex.RLock()
+	autoDownload := viper.GetBool("auto_download")
+	viperMutex.RUnlock()
+	if autoDownload {
+		msg := update.EffectiveMessage
+		text := msg.Text
+		if strings.Contains(text, "/download") {
+			return nil
+		}
 		download(ctx, update)
 	}
 	return nil
 }
 
 func sendLogs(ctx *ext.Context, update *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalf("Не вдалося отримати CHAT_ID: %v", err)
-	}
-
-	chatID := update.EffectiveChat().GetID()
-	if chatID != int64(allowedChatId) {
-		log.Printf("Неавторизований доступ до команди /logs від користувача %s", update.EffectiveUser().Username)
+	chatID := access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
 
@@ -194,16 +218,12 @@ func sendLogs(ctx *ext.Context, update *ext.Update) error {
 }
 
 func updateYtdlp(ctx *ext.Context, update *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalf("Не вдалося отримати CHAT_ID: %v", err)
-	}
-
-	chatID := update.EffectiveChat().GetID()
-	if chatID != int64(allowedChatId) {
-		log.Printf("Неавторизований доступ до команди /logs від користувача %s", update.EffectiveUser().Username)
+	chatID := access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
+
 	msg := yt.UpdateYtdlp()
 	ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: msg,
@@ -213,16 +233,13 @@ func updateYtdlp(ctx *ext.Context, update *ext.Update) error {
 }
 
 func settings(ctx *ext.Context, update *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalf("Не вдалося отримати CHAT_ID: %v", err)
-	}
-
-	chatID := update.EffectiveChat().GetID()
-	if chatID != int64(allowedChatId) {
+	chatID := access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
 
+	viperMutex.RLock()
 	rows := []tg.KeyboardButtonRow{
 		{
 			Buttons: []tg.KeyboardButtonClass{
@@ -241,17 +258,18 @@ func settings(ctx *ext.Context, update *ext.Update) error {
 			},
 		},
 	}
+	viperMutex.RUnlock()
 
-	_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+	_, _ = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "⚙️ Налаштування бота:\nВиберіть опцію для увімкнення/вимкнення.",
 		ReplyMarkup: &tg.ReplyInlineMarkup{
 			Rows: rows,
 		},
 	})
-	if err != nil {
-		log.Printf("Помилка надсилання повідомлення /settings: %v", err)
-		return err
-	}
+	// if err != nil {
+	// 	log.Printf("Помилка надсилання повідомлення /settings: %v", err)
+	// 	return err
+	// }
 
 	return nil
 }
@@ -264,13 +282,9 @@ func boolToEmoji(b bool) string {
 }
 
 func settingsCallback(ctx *ext.Context, u *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalf("Не вдалося отримати CHAT_ID: %v", err)
-	}
-
-	chatID := u.EffectiveChat().GetID()
-	if chatID != int64(allowedChatId) {
+	chatID := access(ctx, u)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
 
@@ -278,6 +292,7 @@ func settingsCallback(ctx *ext.Context, u *ext.Update) error {
 	data := callback.Data
 	messageID := callback.MsgID
 
+	viperMutex.Lock()
 	autoDownload := viper.GetBool("auto_download")
 	deleteUrl := viper.GetBool("delete_url")
 	switch string(data) {
@@ -287,11 +302,17 @@ func settingsCallback(ctx *ext.Context, u *ext.Update) error {
 		viper.Set("delete_url", !deleteUrl)
 	default:
 		log.Printf("Невідомий callback: %s", data)
+		viperMutex.Unlock()
 		return nil
 	}
-	viper.WriteConfig()
+	if err := viper.WriteConfig(); err != nil {
+		log.Printf("Помилка збереження конфігурації: %v", err)
+		viperMutex.Unlock()
+		return err
+	}
+	viperMutex.Unlock()
 
-	// Оновлюємо кнопки
+	viperMutex.RLock()
 	rows := []tg.KeyboardButtonRow{
 		{
 			Buttons: []tg.KeyboardButtonClass{
@@ -310,47 +331,44 @@ func settingsCallback(ctx *ext.Context, u *ext.Update) error {
 			},
 		},
 	}
+	viperMutex.RUnlock()
 
-	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+	_, _ = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      messageID,
 		Message: "⚙️ Налаштування бота:",
 		ReplyMarkup: &tg.ReplyInlineMarkup{
 			Rows: rows,
 		},
 	})
-	if err != nil {
-		log.Printf("Помилка редагування повідомлення: %v", err)
-		return err
-	}
+	// if err != nil {
+	// 	log.Printf("Помилка редагування повідомлення: %v", err)
+	// 	return err
+	// }
 
-	_, err = ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{
+	_, _ = ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{
 		QueryID: callback.QueryID,
 	})
-	if err != nil {
-		log.Printf("Помилка відповіді на callback: %v", err)
-		return err
-	}
+	// if err != nil {
+	// 	log.Printf("Помилка відповіді на callback: %v", err)
+	// 	return err
+	// }
 
 	return nil
 }
 
 func download(ctx *ext.Context, update *ext.Update) error {
-	allowedChatId, err := strconv.Atoi(os.Getenv("CHAT_ID"))
-	if err != nil {
-		log.Fatalln("Не вдалося отримати chatID")
-	}
-	chat := update.EffectiveChat()
-	chatID := update.EffectiveChat().GetID()
-	user := update.EffectiveUser()
-
-	if chat == nil || chatID != int64(allowedChatId) {
-		// Неавторизований доступ
-		fmt.Printf("Неавторизований доступ: %s \n", user.Username)
+	chatID := access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
 
 	msg := update.EffectiveMessage
 	text := msg.Text
+
+	if strings.Contains(text, "/fragment") {
+		return nil
+	}
 	var url, platform string
 	var isValid bool
 
@@ -533,7 +551,10 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
-	if viper.GetBool("delete_url") {
+	viperMutex.RLock()
+	deleteURL := viper.GetBool("delete_url")
+	viperMutex.RUnlock()
+	if deleteURL {
 		if strings.TrimSpace(text) == url {
 			log.Printf("Спроба видалити повідомлення (ID: %d, ChatID: %d) з URL: %s", msg.ID, chatID, url)
 
@@ -558,14 +579,14 @@ func download(ctx *ext.Context, update *ext.Update) error {
 }
 
 func fragment(ctx *ext.Context, u *ext.Update) error {
-	allowedChatId, _ := strconv.Atoi(os.Getenv("CHAT_ID"))
-	chatID := u.EffectiveChat().GetID()
-	if chatID != int64(allowedChatId) {
+	chatID := access(ctx, u)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
 		return nil
 	}
 
 	args := strings.Fields(u.EffectiveMessage.Text)
-	if len(args) != 4 {
+	if len(args) != 3 {
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 			Message: "Використання: /fragment <YouTube_URL> <start_time> <end_time>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 00:02:00 00:03:00",
 		})
@@ -573,24 +594,32 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 	}
 
 	url := args[1]
-	startTime := args[2]
-	endTime := args[3]
+	fragment := args[2]
 
-	if !isValidTimeFormat(startTime) || !isValidTimeFormat(endTime) {
-		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Неправильний формат часу. Використовуйте HH:MM:SS (наприклад, 00:02:00).",
-		})
-		return err
+	var title string
+	info, err := yt.GetVideoInfo(url)
+	if err != nil {
+		title = "Не вдалося отримати назву відео"
 	}
+	title = info.Title
+	sentMsg, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: "Обробка посилання: \n[◼◼◻◻◻◻◻◻]",
+	})
 
-	outputFile := "output.mp4"
+	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+		ID:      sentMsg.GetID(),
+		Message: "Завантаження відео і вирізання потрібного фрагменту: \n[◼◼◼◼◻◻◻◻]",
+	})
+
+	viperMutex.RLock()
+	filter := viper.GetString("yt-dlp_filter")
+	viperMutex.RUnlock()
+	outputFile := "outputFrag.%(ext)s"
 	cmd := exec.Command(
 		"yt-dlp",
-		"--external-downloader", "ffmpeg",
-		"--external-downloader-args", fmt.Sprintf("ffmpeg:-ss %s -to %s", startTime, endTime),
-		"--cookies", "./cookies/cookiesYt.txt",
+		"--download-sections", fmt.Sprintf("*%s", fragment),
+		"-f", filter,
 		"-o", outputFile,
-		"-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
 		url,
 	)
 
@@ -599,15 +628,23 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 
 	if err := cmd.Run(); err != nil {
 		log.Printf("Помилка завантаження фрагменту: %v", err)
-		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		_, err := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+			ID:      sentMsg.GetID(),
 			Message: "Помилка завантаження фрагменту. Перевірте URL або спробуйте пізніше.",
 		})
 		return err
 	}
 
+	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+		ID:      sentMsg.GetID(),
+		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
+	})
+
+	outputFile = "outputFrag.mp4"
 	if _, err := os.Stat(outputFile); os.IsNotExist(err) {
-		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Не вдалося завантажити фрагмент. Можливо, відео недоступне.",
+		_, err := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+			ID:      sentMsg.GetID(),
+			Message: "Не вдалося завантажити фрагмент",
 		})
 		return err
 	}
@@ -625,13 +662,44 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		return err
 	}
 
+	thumbName := yt.GetThumb(url)
+	var thumbFile tg.InputFileClass
+	if thumbName != "" {
+		thumbFileStat, err := os.Stat(thumbName)
+		if err == nil && !thumbFileStat.IsDir() {
+			thumbFile, err = uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName)
+			if err != nil {
+				log.Printf("Помилка завантаження прев’ю: %v", err)
+				thumbFile = nil
+			}
+		} else {
+			log.Printf("Прев’ю недоступне або є директорією: %s", thumbName)
+			thumbFile = nil
+		}
+	}
+
 	media := &tg.InputMediaUploadedDocument{
 		File:     videoFile,
 		MimeType: "video/mp4",
+		Thumb:    thumbFile,
+		Attributes: []tg.DocumentAttributeClass{
+			&tg.DocumentAttributeVideo{
+				SupportsStreaming: true,
+			},
+			&tg.DocumentAttributeFilename{
+				FileName: outputFile,
+			},
+		},
 	}
 
-	_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
-		Media: media,
+	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+		ID:      sentMsg.GetID(),
+		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◼◻]",
+	})
+	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+		ID:      sentMsg.GetID(),
+		Message: title,
+		Media:   media,
 	})
 	if err != nil {
 		log.Printf("Помилка відправки медіа: %v", err)
@@ -642,10 +710,52 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		log.Printf("Помилка видалення файлу %s: %v", outputFile, err)
 	}
 
+	if thumbName != "" {
+		if err := os.Remove(thumbName); err != nil {
+			log.Printf("Не вдалося видалити прев’ю: %v", err)
+		}
+	}
+
 	return err
 }
 
 func isValidTimeFormat(t string) bool {
 	_, err := time.Parse("15:04:05", t)
 	return err == nil
+}
+
+func access(ctx *ext.Context, update *ext.Update) int64 {
+	allowedChatId, _ := strconv.Atoi(os.Getenv("CHAT_ID"))
+	chatID := update.EffectiveChat().GetID()
+	user := update.EffectiveUser()
+
+	viperMutex.RLock()
+	allowedChats := viper.GetIntSlice("allowed_chat")
+	viperMutex.RUnlock()
+
+	isAuthorized := false
+	for _, chat := range allowedChats {
+		if int64(chat) == chatID {
+			isAuthorized = true
+			break
+		}
+	}
+	if chatID == int64(allowedChatId) {
+		isAuthorized = true
+	} else {
+		viperMutex.RLock()
+		allowedUsers := viper.GetIntSlice("allowed_user")
+		viperMutex.RUnlock()
+		for _, allowedUserID := range allowedUsers {
+			if int64(allowedUserID) == user.ID {
+				isAuthorized = true
+				break
+			}
+		}
+	}
+	if !isAuthorized {
+		log.Printf("Неавторизований доступ: %s (UserID: %d, ChatID: %d)", user.Username, user.ID, chatID)
+		return 0
+	}
+	return chatID
 }
