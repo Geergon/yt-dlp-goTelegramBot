@@ -15,6 +15,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -43,6 +44,11 @@ func init() {
 var viperMutex sync.RWMutex
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
@@ -377,6 +383,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 	}
 	var url, platform string
 	var isValid bool
+	var filePaths []string
 
 	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
 		url, isValid, platform = urlYT, true, "YouTube"
@@ -398,7 +405,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
-	info, err := yt.GetVideoInfo(url)
+	// info, err := yt.GetVideoInfo(url)
 	if err != nil {
 		log.Printf("Помилка отримання інформації про відео (%s): %v", platform, err)
 		_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -414,13 +421,13 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		ID:      sentMsg.GetID(),
 		Message: "Завантаження відео: \n[◼◼◼◼◻◻◻◻]",
 	})
-	var downloadFunc func(string) (bool, error)
+	var downloadFunc func(string) (bool, []string, error)
 	var mediaFileName string
 	switch platform {
 	case "YouTube":
-		downloadFunc = func(url string) (bool, error) {
+		downloadFunc = func(url string) (bool, []string, error) {
 			err := yt.DownloadYTVideo(url)
-			return false, err // Always video
+			return false, []string{"output.mp4"}, err // Always video
 		}
 		mediaFileName = "output.mp4"
 	case "TikTok":
@@ -438,10 +445,12 @@ func download(ctx *ext.Context, update *ext.Update) error {
 	var isPhoto bool
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 
-		isPhoto, downloadErr = downloadFunc(url)
-		if downloadErr == nil {
+		isPhoto, filePaths, err = downloadFunc(url)
+		if err == nil {
+			log.Println("Завантаження успішно завершено")
 			break
 		}
+		downloadErr = err
 		log.Printf("Спроба %d завантаження (%s) не вдалася: %v", attempt, platform, downloadErr)
 
 		videoName := "output.mp4"
@@ -472,6 +481,17 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		ID:      sentMsg.GetID(),
 		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
 	})
+
+	user := update.EffectiveUser()
+	username := "@" + user.Username
+	title := username + " (link)"
+	entities := []tg.MessageEntityClass{
+		&tg.MessageEntityTextURL{
+			Offset: len(username) + 1,
+			Length: 6,
+			URL:    url,
+		},
+	}
 
 	if platform == "TikTok" && isPhoto || platform == "Instagram" && isPhoto {
 		mediaFileName = "output.jpg"
@@ -549,19 +569,12 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		ID:      sentMsg.GetID(),
 		Message: "Надсилання відео: \n[◼◼◼◼◼◼◼◻]",
 	})
-	var title string
-	if info.Title == "" {
-		title = "Не вдалося отримати назву відео"
-	}
-	if isPhoto {
-		title = "."
-	} else {
-		title = info.Title
-	}
+
 	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsg.GetID(),
-		Message: title,
-		Media:   media,
+		ID:       sentMsg.GetID(),
+		Message:  title,
+		Media:    media,
+		Entities: entities,
 	})
 	if err != nil {
 		log.Printf("Помилка редагування повідомлення з відео: %v", err)
@@ -624,12 +637,6 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад, який завантажить відео з п'ятої хвилини відео по сьому хвилину: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00 \nМожна вказувати секунди '00:10-00:50' і години '01:01:00-01:03:00'",
 		})
 	}
-	var title string
-	info, err := yt.GetVideoInfo(url)
-	if err != nil {
-		title = "Не вдалося отримати назву відео"
-	}
-	title = info.Title
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
@@ -702,14 +709,26 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		}
 	}
 
+	user := u.EffectiveUser()
+	username := "@" + user.Username
+	title := username + " (link)"
+
+	entities := []tg.MessageEntityClass{
+		&tg.MessageEntityTextURL{
+			Offset: len(username) + 1, // Позиція, де починається "(link)" (після title і "\n")
+			Length: 6,                 // Довжина "(link)"
+			URL:    url,               // URL відео
+		},
+	}
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      sentMsg.GetID(),
 		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◼◻]",
 	})
 	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsg.GetID(),
-		Message: title,
-		Media:   media,
+		ID:       sentMsg.GetID(),
+		Message:  title,
+		Media:    media,
+		Entities: entities,
 	})
 	if err != nil {
 		log.Printf("Помилка відправки медіа: %v", err)
