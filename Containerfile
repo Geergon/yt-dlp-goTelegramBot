@@ -14,11 +14,12 @@ FROM alpine:3.21.3
 
 COPY --from=builder /app/main /app
 
-RUN apk --no-cache add \
+RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
+  apk --no-cache add \
   jq curl \
   ffmpeg \
-  # attr ca-certificates py3-brotli py3-mutagen py3-pycryptodomex py3-secretstorage py3-websockets yt-dlp-core \
   bash \
+  gallery-dl \
   dumb-init 
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
