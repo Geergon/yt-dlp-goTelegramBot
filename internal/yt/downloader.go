@@ -162,20 +162,46 @@ func DownloadInstaVideo(url string) (bool, error) {
 	return false, os.ErrNotExist
 }
 
-func GetThumb(url string) string {
-	cmd := exec.Command("yt-dlp",
-		"--skip-download",
-		"--write-thumbnail",
-		"--convert-thumbnails", "jpg",
-		"--output", "thumb.%(ext)s",
-		url,
-	)
-
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("Помилка при отриманні прев'ю: %v", err)
+func GetThumb(url string, platform string) string {
+	var cookies string
+	switch platform {
+	case "YouTube":
+		cookies = "./cookies/cookiesYT.txt"
+	case "TikTok":
+		cookies = "./cookies/cookiesTT.txt"
+	case "Instagram":
+		cookies = "./cookies/cookiesINSTA.txt"
 	}
-	return "thumb.jpg"
+	if _, err := os.Stat(cookies); os.IsNotExist(err) {
+		cmd := exec.Command("yt-dlp",
+			"--skip-download",
+			"--write-thumbnail",
+			"--convert-thumbnails", "jpg",
+			"--output", "thumb.%(ext)s",
+			url,
+		)
+
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("Помилка при отриманні прев'ю: %v", err)
+		}
+		return "thumb.jpg"
+	} else {
+		cmd := exec.Command("yt-dlp",
+			"--skip-download",
+			"--write-thumbnail",
+			"--convert-thumbnails", "jpg",
+			"--cookies", cookies,
+			"--output", "thumb.%(ext)s",
+			url,
+		)
+
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("Помилка при отриманні прев'ю: %v", err)
+		}
+		return "thumb.jpg"
+	}
 }
 
 func runYtdlp(useCookies bool, url string, isTT bool, isInsta bool) error {

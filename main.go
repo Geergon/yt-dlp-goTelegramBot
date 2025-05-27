@@ -532,7 +532,7 @@ func download(ctx *ext.Context, update *ext.Update) error {
 			},
 		}
 
-		if thumbName = yt.GetThumb(url); thumbName != "" {
+		if thumbName = yt.GetThumb(url, platform); thumbName != "" {
 			if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
 				if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
 					media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
@@ -690,7 +690,7 @@ func fragment(ctx *ext.Context, u *ext.Update) error {
 		},
 	}
 
-	if thumbName = yt.GetThumb(url); thumbName != "" {
+	if thumbName = yt.GetThumb(url, "YouTube"); thumbName != "" {
 		if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
 			if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
 				media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
