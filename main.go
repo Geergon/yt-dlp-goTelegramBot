@@ -15,7 +15,6 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -44,11 +43,6 @@ func init() {
 var viperMutex sync.RWMutex
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
@@ -493,92 +487,151 @@ func download(ctx *ext.Context, update *ext.Update) error {
 		},
 	}
 
-	if platform == "TikTok" && isPhoto || platform == "Instagram" && isPhoto {
-		mediaFileName = "output.jpg"
-	}
-	file, err := os.Stat(mediaFileName)
-	if err != nil {
-		logMsg := "Помилка перевірки файлу відео"
-		if os.IsNotExist(err) {
-			logMsg = "Файл відео не існує: " + mediaFileName
+	if isPhoto && len(filePaths) > 0 {
+		var mediaGroup []tg.InputSingleMedia
+		for _, filePath := range filePaths {
+			fileInfo, err := os.Stat(filePath)
+			if err != nil {
+				log.Printf("Помилка перевірки файлу %s: %v", filePath, err)
+				continue
+			}
+			if fileInfo.IsDir() {
+				log.Printf("Файл %s є директорією", filePath)
+				continue
+			}
+			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, filePath)
+			if err != nil {
+				log.Printf("Помилка завантаження файлу %s: %v", filePath, err)
+				continue
+			}
+			media := tg.InputSingleMedia{
+				Media: &tg.InputMediaUploadedPhoto{
+					File: fileData,
+				},
+			}
+			if len(mediaGroup) == 0 {
+				media.Message = title
+				media.Entities = entities
+			}
+			mediaGroup = append(mediaGroup, media)
 		}
-		log.Println(logMsg)
+
+		if len(mediaGroup) == 0 {
+			log.Println("Жоден файл не придатний для відправки")
+			ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsg.GetID(),
+				Message: "Помилка: не вдалося завантажити жоден файл.",
+			})
+			return nil
+		}
+
 		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 			ID:      sentMsg.GetID(),
-			Message: "Помилка: не вдалося завантажити відео: " + logMsg,
+			Message: "Надсилання медіа: \n[◼◼◼◼◼◼◼◻]",
 		})
-		return err
-	}
-	if file.IsDir() {
-		log.Printf("Файл %s є директорією", mediaFileName)
-		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-			ID:      sentMsg.GetID(),
-			Message: "Помилка: завантажений файл є директорією.",
-		})
-		return nil
-	}
 
-	fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
-	if err != nil {
-		log.Printf("Помилка завантаження відео в Telegram: %v", err)
-		logErr := fmt.Sprintf("Помилка завантаження відео в Telegram: \n%v", err)
-		_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-			ID:      sentMsg.GetID(),
-			Message: logErr,
+		_, err = ctx.SendMultiMedia(chatID, &tg.MessagesSendMultiMediaRequest{
+			MultiMedia: mediaGroup,
 		})
-		if editErr != nil {
-			log.Printf("Помилка редагування повідомлення: %v", editErr)
-		}
-		return err
-	}
-
-	var thumbName string
-	var media tg.InputMediaClass
-	if isPhoto {
-		media = &tg.InputMediaUploadedPhoto{
-			File: fileData,
+		if err != nil {
+			log.Printf("Помилка відправки медіа-групи: %v", err)
+			ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsg.GetID(),
+				Message: "Помилка: не вдалося відправити медіа.",
+			})
+			return err
 		}
 	} else {
-		media = &tg.InputMediaUploadedDocument{
-			File:     fileData,
-			MimeType: "video/mp4",
-			Attributes: []tg.DocumentAttributeClass{
-				&tg.DocumentAttributeVideo{
-					SupportsStreaming: true,
-				},
-				&tg.DocumentAttributeFilename{
-					FileName: mediaFileName,
-				},
-			},
+		fileInfo, err := os.Stat(mediaFileName)
+		if err != nil {
+			logMsg := "Помилка перевірки файлу відео"
+			if os.IsNotExist(err) {
+				logMsg = "Файл відео не існує: " + mediaFileName
+			}
+			log.Println(logMsg)
+			ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsg.GetID(),
+				Message: "Помилка: не вдалося завантажити відео: " + logMsg,
+			})
+			return err
+		}
+		if fileInfo.IsDir() {
+			log.Printf("Файл %s є директорією", mediaFileName)
+			ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsg.GetID(),
+				Message: "Помилка: завантажений файл є директорією.",
+			})
+			return nil
 		}
 
-		if thumbName = yt.GetThumb(url); thumbName != "" {
-			if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
-				if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
-					media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
+		fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
+		if err != nil {
+			log.Printf("Помилка завантаження відео в Telegram: %v", err)
+			logErr := fmt.Sprintf("Помилка завантаження відео в Telegram: \n%v", err)
+			_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsg.GetID(),
+				Message: logErr,
+			})
+			if editErr != nil {
+				log.Printf("Помилка редагування повідомлення: %v", editErr)
+			}
+			return err
+		}
+
+		var media tg.InputMediaClass
+		var thumbName string
+		if isPhoto {
+			media = &tg.InputMediaUploadedPhoto{
+				File: fileData,
+			}
+		} else {
+			media = &tg.InputMediaUploadedDocument{
+				File:     fileData,
+				MimeType: "video/mp4",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: mediaFileName,
+					},
+				},
+			}
+
+			if thumbName = yt.GetThumb(url); thumbName != "" {
+				if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
+					if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
+						media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
+					} else {
+						log.Printf("Помилка завантаження прев’ю %s: %v", thumbName, err)
+					}
 				} else {
-					log.Printf("Помилка завантаження прев’ю %s: %v", thumbName, err)
+					log.Printf("Прев’ю недоступне або є директорією: %s", thumbName)
 				}
-			} else {
-				log.Printf("Прев’ю недоступне або є директорією: %s", thumbName)
 			}
 		}
-	}
 
-	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsg.GetID(),
-		Message: "Надсилання відео: \n[◼◼◼◼◼◼◼◻]",
-	})
+		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+			ID:      sentMsg.GetID(),
+			Message: "Надсилання відео: \n[◼◼◼◼◼◼◼◻]",
+		})
 
-	_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:       sentMsg.GetID(),
-		Message:  title,
-		Media:    media,
-		Entities: entities,
-	})
-	if err != nil {
-		log.Printf("Помилка редагування повідомлення з відео: %v", err)
-		return err
+		_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+			ID:       sentMsg.GetID(),
+			Message:  title,
+			Media:    media,
+			Entities: entities,
+		})
+		if err != nil {
+			log.Printf("Помилка редагування повідомлення з відео: %v", err)
+			return err
+		}
+
+		if thumbName != "" {
+			if err := os.Remove(thumbName); err != nil {
+				log.Printf("Не вдалося видалити прев’ю: %v", err)
+			}
+		}
 	}
 
 	viperMutex.RLock()
@@ -600,11 +653,9 @@ func download(ctx *ext.Context, update *ext.Update) error {
 	if err := os.Remove(mediaFileName); err != nil {
 		log.Printf("Не вдалося видалити медіа: %v", err)
 	}
-	if !isPhoto {
-		if thumbName != "" {
-			if err := os.Remove(thumbName); err != nil {
-				log.Printf("Не вдалося видалити прев’ю: %v", err)
-			}
+	for _, filePath := range filePaths {
+		if err := os.Remove(filePath); err != nil {
+			log.Printf("Не вдалося видалити файл %s: %v", filePath, err)
 		}
 	}
 	return nil
