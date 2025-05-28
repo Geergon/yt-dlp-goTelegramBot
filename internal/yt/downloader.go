@@ -25,45 +25,36 @@ var viperMutex sync.RWMutex
 func DownloadYTVideo(url string) error {
 	viperMutex.RLock()
 	filter := viper.GetString("yt-dlp_filter")
+	duration := viper.GetString("duration")
+	longVideoDownload := viper.GetBool("long_video_download")
 	viperMutex.RUnlock()
 
 	cookies := "./cookies/cookiesYT.txt"
-	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		log.Println("Файл кукі не знайдено")
-		cmd := exec.Command(
-			"yt-dlp",
-			"-f", filter,
-			"--merge-output-format", "mp4",
-			"-o", "output.%(ext)s",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-			return err
-		}
+	useCookies := true
 
-		log.Printf("Завантаження %s завершено успішно", url)
-		return nil
-	} else {
-		log.Println("Файл кукі знайдено")
-		cmd := exec.Command(
-			"yt-dlp",
-			"-f", filter,
-			"--cookies", cookies,
-			"--merge-output-format", "mp4",
-			"-o", "output.%(ext)s",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-			return err
-		}
-
-		log.Printf("Завантаження %s завершено успішно", url)
-		return nil
+	args := []string{
+		"-f", filter,
+		"--merge-output-format", "mp4",
+		"--output", "output.%(ext)s",
 	}
+	if useCookies {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+	if longVideoDownload {
+		args = append(args, "--match-filter", fmt.Sprintf("duration<%s", duration))
+	}
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
+		return err
+	}
+
+	log.Printf("Завантаження %s завершено успішно", url)
+	return nil
 }
 
 func DownloadTTVideo(url string) (bool, error) {
