@@ -1,22 +1,40 @@
 package tgbot
 
 import (
-	"context"
 	"fmt"
+	"image/jpeg"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"github.com/spf13/viper"
 )
+
+var bot *tgbotapi.BotAPI
+
+func init() {
+	botToken := os.Getenv("BOT_TOKEN")
+	if botToken == "" {
+		log.Fatal("BOT_TOKEN не задано")
+	}
+
+	var err error
+	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
+	if err != nil {
+		log.Fatalf("Помилка ініціалізації бота: %v", err)
+	}
+	bot.Debug = true // Додайте для дебагу, якщо потрібно
+}
 
 func Echo(ctx *ext.Context, update *ext.Update) error {
 	viperMutex.RLock()
@@ -96,12 +114,11 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	var downloadErr error
 	var isPhoto bool
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-
 		isPhoto, downloadErr = downloadFunc(url)
 		if downloadErr == nil || isPhoto {
 			break
 		}
-		log.Printf("Спроба %d завантаження (%s) не вдалася: %v", attempt, platform, downloadErr)
+		log.Printf("Спроба %d завантаження (%s) не вдалося: %v", attempt, platform, downloadErr)
 
 		videoName := "output.mp4"
 		partFile := videoName + ".part"
@@ -136,7 +153,6 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	var media tg.InputMediaClass
 	var isExist bool
 	var images []string
-	var gallery []tg.InputSingleMedia
 	if !isPhoto {
 		file, err := os.Stat(mediaFileName)
 		if err != nil {
@@ -205,34 +221,28 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		}
 
 		for _, filePath := range images {
-			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			fileInfo, err := os.Stat(filePath)
+			if os.IsNotExist(err) {
 				log.Printf("Файл %s не існує", filePath)
 				continue
 			}
+			if fileInfo.Size() > 10*1024*1024 {
+				log.Printf("Файл %s занадто великий: %d байтів", filePath, fileInfo.Size())
+				continue
+			}
 
-			uploadedFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, filePath)
+			file, err := os.Open(filePath)
 			if err != nil {
-				log.Printf("Помилка завантаження фото в Telegram: %v", err)
-				logErr := fmt.Sprintf("Помилка завантаження фото в Telegram: \n%v", err)
-				_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-					ID:      sentMsg.GetID(),
-					Message: logErr,
-				})
-				if editErr != nil {
-					log.Printf("Помилка редагування повідомлення: %v", editErr)
-				}
-				return err
+				log.Printf("Помилка відкриття файлу %s: %v", filePath, err)
+				continue
 			}
-			uploadedMedia := &tg.InputMediaUploadedPhoto{
-				File: uploadedFile,
+			defer file.Close()
+			_, err = jpeg.Decode(file)
+			if err != nil {
+				log.Printf("Файл %s не є коректним JPEG: %v", filePath, err)
+				continue
 			}
-
-			gallery = append(gallery, tg.InputSingleMedia{
-				Media:    uploadedMedia,
-				RandomID: int64(time.Now().UnixNano()),
-			})
 		}
-
 	}
 
 	ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -241,7 +251,7 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	})
 	user := update.EffectiveUser()
 	username := "@" + user.Username
-	title := username + " (link)"
+	title := fmt.Sprintf("%s (\\[%link\\](\\(%s\\)))", username, url) // Екрануємо ( і )
 	entities := []tg.MessageEntityClass{
 		&tg.MessageEntityTextURL{
 			Offset: len(username) + 1,
@@ -251,15 +261,6 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	}
 
 	if isPhoto {
-		if len(gallery) == 0 {
-			log.Println("Немає зображень для відправлення")
-			ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-				ID:      sentMsg.GetID(),
-				Message: "Помилка: немає зображень для відправлення",
-			})
-			return fmt.Errorf("немає зображень для відправлення")
-		}
-
 		err := ctx.DeleteMessages(chatID, []int{sentMsg.GetID()})
 		if err != nil {
 			log.Printf("Помилка видалення повідомлення (ID: %d, ChatID: %d): %v", msg.ID, chatID, err)
@@ -267,91 +268,28 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 			log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", msg.ID, chatID, url)
 		}
 
-		peer := &tg.InputPeerChannel{
-			ChannelID:  update.EffectiveChat().GetID(),
-			AccessHash: update.EffectiveChat().GetAccessHash(),
-		}
+		botChatID := chatID
+		idAsString := strconv.FormatInt(botChatID, 10)
+		prefixedIDString := "-100" + idAsString
+		newTelegramID, err := strconv.ParseInt(prefixedIDString, 10, 64)
 
-		var multiMedia []tg.InputSingleMedia
-		for i, media := range gallery {
-			singleMedia := tg.InputSingleMedia{
-				Media:    media.Media,
-				RandomID: media.RandomID,
-			}
-			// Додаємо caption лише до першого зображення
+		log.Printf("Sending %d images to chat ID %d as a media group using telegram-bot-api", len(images), botChatID)
+		var mediaGroup []interface{}
+		for i, filePath := range images {
+			media := tgbotapi.NewInputMediaPhoto(tgbotapi.FilePath(filePath))
 			if i == 0 {
-				singleMedia.Message = title
-				singleMedia.Entities = entities
+				media.Caption = fmt.Sprintf("%s (<a href=\"%s\">link</a>)", username, url)
+				media.ParseMode = "HTML"
 			}
-			multiMedia = append(multiMedia, singleMedia)
-			log.Printf("Prepared InputSingleMedia %d: RandomID=%d", i+1, media.RandomID)
+			mediaGroup = append(mediaGroup, media)
 		}
-
-		log.Printf("Sending %d images to chat ID %d as a multi-media group", len(gallery), update.EffectiveChat().GetID())
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		_, err = ctx.Raw.MessagesSendMultiMedia(ctxWithTimeout, &tg.MessagesSendMultiMediaRequest{
-			Peer:       peer,
-			MultiMedia: multiMedia,
-		})
+		msgConfig := tgbotapi.NewMediaGroup(newTelegramID, mediaGroup)
+		_, err = bot.SendMediaGroup(msgConfig)
 		if err != nil {
-			log.Printf("Помилка відправлення медіа-групи: %v", err)
-			// Якщо помилка MEDIA_INVALID, спробуємо відправити по одному
-			if strings.Contains(err.Error(), "MEDIA_INVALID") {
-				log.Println("Falling back to sending images one by one")
-				for i, media := range gallery {
-					log.Printf("Sending image %d/%d with RandomID %d", i+1, len(gallery), media.RandomID)
-					_, err = ctx.Raw.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
-						Peer:     peer,
-						Media:    media.Media,
-						Message:  title,
-						Entities: entities,
-						RandomID: media.RandomID,
-					})
-					if err != nil {
-						log.Printf("Помилка відправлення зображення %d: %v", i+1, err)
-						return err
-					}
-					log.Printf("Image %d/%d sent successfully", i+1, len(gallery))
-					if i < len(gallery)-1 {
-						time.Sleep(100 * time.Millisecond)
-					}
-				}
-			} else {
-				return err
-			}
+			log.Printf("Помилка відправлення медіа-групи через telegram-bot-api: %v", err)
+			return err
 		}
-		// for i, media := range gallery {
-		// 	log.Printf("Sending image %d/%d", i+1, len(gallery))
-		// 	_, err = ctx.Raw.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
-		// 		Peer:     peer,
-		// 		Media:    media.Media,
-		// 		RandomID: media.RandomID,
-		// 	})
-		// 	if err != nil {
-		// 		log.Printf("Помилка відправлення зображення %d: %v", i+1, err)
-		// 		return err
-		// 	}
-		// 	// Додаємо невелику затримку між відправленнями, щоб уникнути обмежень
-		// 	time.Sleep(500 * time.Millisecond)
-		// }
-
-		// log.Println(gallery)
-		// peer := &tg.InputPeerChannel{
-		// 	ChannelID:  update.EffectiveChat().GetID(),
-		// 	AccessHash: update.EffectiveChat().GetAccessHash(),
-		// }
-		// _, err = ctx.Raw.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
-		// 	Peer:       peer,
-		// 	MultiMedia: gallery,
-		// })
-		// _, err = ctx.SendMultiMedia(chatID, &tg.MessagesSendMultiMediaRequest{
-		// 	MultiMedia: multiMedia,
-		// })
-		// if err != nil {
-		// 	log.Printf("Помилка відправлення альбому: %v", err)
-		// 	return err
-		// }
+		log.Printf("Media group sent successfully with %d images", len(images))
 	} else {
 		_, err = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 			ID:       sentMsg.GetID(),
@@ -392,7 +330,6 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 			path := path.Join(dir, m)
 			os.Remove(path)
 		}
-
 	}
 
 	if !isPhoto {
