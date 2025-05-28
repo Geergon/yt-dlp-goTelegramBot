@@ -29,11 +29,11 @@ func init() {
 	}
 
 	var err error
-	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
+	bot, err = tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		log.Fatalf("Помилка ініціалізації бота: %v", err)
 	}
-	bot.Debug = true // Додайте для дебагу, якщо потрібно
+	bot.Debug = true
 }
 
 func Echo(ctx *ext.Context, update *ext.Update) error {
