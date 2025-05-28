@@ -11,7 +11,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/tg"
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -45,11 +44,6 @@ var (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
 	viperMutex.Lock()
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
