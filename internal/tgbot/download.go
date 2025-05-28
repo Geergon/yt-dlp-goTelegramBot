@@ -251,7 +251,7 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	})
 	user := update.EffectiveUser()
 	username := "@" + user.Username
-	title := fmt.Sprintf("%s (\\[%link\\](\\(%s\\)))", username, url) // Екрануємо ( і )
+	title := username + " (link)"
 	entities := []tg.MessageEntityClass{
 		&tg.MessageEntityTextURL{
 			Offset: len(username) + 1,
