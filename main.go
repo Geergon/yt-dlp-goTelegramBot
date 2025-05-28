@@ -11,6 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/tg"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -39,6 +40,31 @@ func init() {
 var viperMutex sync.RWMutex
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	viperMutex.Lock()
+	viper.SetConfigName("config")
+	viper.SetConfigType("toml")
+	viper.AddConfigPath("./config")
+	viper.SetDefault("auto_download", true)
+	viper.SetDefault("delete_url", true)
+	viper.SetDefault("allowed_user", []int{})
+	viper.SetDefault("allowed_chat", []int{})
+	viper.SetDefault("yt-dlp_filter", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]")
+	viper.SetDefault("duration", "600")
+	viper.SetDefault("long_video_download", false)
+	viper.SafeWriteConfig()
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Println("Конфіг файл не знайдений")
+		} else {
+			log.Printf("Помилка з конфіг файлом: %v", err)
+		}
+	}
+
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
 		log.Fatal("Помилка при отриманні APP_ID")
@@ -56,26 +82,6 @@ func main() {
 	chatId := os.Getenv("CHAT_ID")
 	if chatId == "" {
 		log.Fatal("CHAT_ID не задано")
-	}
-
-	viperMutex.Lock()
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath("./config")
-	viper.SetDefault("auto_download", true)
-	viper.SetDefault("delete_url", true)
-	viper.SetDefault("allowed_user", []int{})
-	viper.SetDefault("allowed_chat", []int{})
-	viper.SetDefault("yt-dlp_filter", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]")
-	viper.SetDefault("duration", "600")
-	viper.SetDefault("long_video_download", true)
-	viper.SafeWriteConfig()
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("Конфіг файл не знайдений")
-		} else {
-			log.Printf("Помилка з конфіг файлом: %v", err)
-		}
 	}
 
 	viperMutex.Unlock()

@@ -41,7 +41,7 @@ func DownloadYTVideo(url string) error {
 		log.Println("Використовуємо кукі")
 		args = append(args, "--cookies", cookies)
 	}
-	if longVideoDownload {
+	if !longVideoDownload {
 		args = append(args, "--match-filter", fmt.Sprintf("duration<%s", duration))
 	}
 	args = append(args, url)
@@ -163,36 +163,26 @@ func GetThumb(url string, platform string) string {
 	case "Instagram":
 		cookies = "./cookies/cookiesINSTA.txt"
 	}
-	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		cmd := exec.Command("yt-dlp",
-			"--skip-download",
-			"--write-thumbnail",
-			"--convert-thumbnails", "jpg",
-			"--output", "thumb.%(ext)s",
-			url,
-		)
-
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("Помилка при отриманні прев'ю: %v", err)
-		}
-		return "thumb.jpg"
-	} else {
-		cmd := exec.Command("yt-dlp",
-			"--skip-download",
-			"--write-thumbnail",
-			"--convert-thumbnails", "jpg",
-			"--cookies", cookies,
-			"--output", "thumb.%(ext)s",
-			url,
-		)
-
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("Помилка при отриманні прев'ю: %v", err)
-		}
-		return "thumb.jpg"
+	args := []string{
+		"--skip-download",
+		"--write-thumbnail",
+		"--convert-thumbnails", "jpg",
+		"--output", "thumb.%(ext)s",
 	}
+	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
+
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Помилка при отриманні прев'ю: %v", err)
+		return ""
+	}
+	return "thumb.jpg"
 }
 
 func runYtdlp(useCookies bool, url string, isTT bool, isInsta bool) error {
@@ -242,40 +232,24 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) error {
 		platform = "Instagram"
 		cookies = cookiesINSTA
 	}
-	if useCookies {
-		cmd := exec.Command(
-			"gallery-dl",
-			"-o", "overwrite=true",
-			"--no-part",
-			"-D", ".",
-			"--cookies", cookies,
-			"-f", "output.{extension}",
-			"-o", "directory=",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-			return err
-		}
-		log.Printf("gallery-dl download successful for %s", url)
-		return nil
-	} else {
-		cmd := exec.Command(
-			"gallery-dl",
-			"-o", "overwrite=true",
-			"--no-part",
-			"-D", ".",
-			"-f", "output.{extension}",
-			"-o", "directory=",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-			return err
-		}
-		log.Printf("gallery-dl download successful for %s", url)
-		return nil
+	args := []string{
+		"-o", "overwrite=true",
+		"--no-part",
+		"-D", ".",
+		"-f", "output.{extension}",
+		"-o", "directory=",
 	}
+	if useCookies {
+		args = append(args, "--cookies", cookies)
+	}
+	args = append(args, url)
+
+	cmd := exec.Command("gallery-dl", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
+		return err
+	}
+	log.Printf("gallery-dl download successful for %s", url)
+	return nil
 }

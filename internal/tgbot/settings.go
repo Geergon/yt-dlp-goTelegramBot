@@ -33,6 +33,14 @@ func Settings(ctx *ext.Context, update *ext.Update) error {
 				},
 			},
 		},
+		{
+			Buttons: []tg.KeyboardButtonClass{
+				&tg.KeyboardButtonCallback{
+					Text: "Завантаження довгих відео: " + boolToEmoji(viper.GetBool("long_video_download")),
+					Data: []byte("cb_settings_long_video_download"),
+				},
+			},
+		},
 	}
 	viperMutex.RUnlock()
 
@@ -42,11 +50,6 @@ func Settings(ctx *ext.Context, update *ext.Update) error {
 			Rows: rows,
 		},
 	})
-	// if err != nil {
-	// 	log.Printf("Помилка надсилання повідомлення /settings: %v", err)
-	// 	return err
-	// }
-
 	return nil
 }
 
@@ -71,11 +74,14 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 	viperMutex.Lock()
 	autoDownload := viper.GetBool("auto_download")
 	deleteUrl := viper.GetBool("delete_url")
+	longVideoDownload := viper.GetBool("long_video_download")
 	switch string(data) {
 	case "cb_settings_auto_download":
 		viper.Set("auto_download", !autoDownload)
 	case "cb_settings_delete_links":
 		viper.Set("delete_url", !deleteUrl)
+	case "cb_settings_long_video_download":
+		viper.Set("long_video_download", !longVideoDownload)
 	default:
 		log.Printf("Невідомий callback: %s", data)
 		viperMutex.Unlock()
@@ -106,6 +112,14 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 				},
 			},
 		},
+		{
+			Buttons: []tg.KeyboardButtonClass{
+				&tg.KeyboardButtonCallback{
+					Text: "Завантаження довгих відео: " + boolToEmoji(viper.GetBool("long_video_download")),
+					Data: []byte("cb_settings_long_video_download"),
+				},
+			},
+		},
 	}
 	viperMutex.RUnlock()
 
@@ -116,18 +130,9 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 			Rows: rows,
 		},
 	})
-	// if err != nil {
-	// 	log.Printf("Помилка редагування повідомлення: %v", err)
-	// 	return err
-	// }
 
 	_, _ = ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{
 		QueryID: callback.QueryID,
 	})
-	// if err != nil {
-	// 	log.Printf("Помилка відповіді на callback: %v", err)
-	// 	return err
-	// }
-
 	return nil
 }
