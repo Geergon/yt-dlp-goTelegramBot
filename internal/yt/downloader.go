@@ -76,25 +76,17 @@ func DownloadTTVideo(url string) (bool, error) {
 
 	log.Printf("Намагаємось завантажити з gallery-dl TikTok URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
+	var isSuccess bool
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		galleryErr = runGalleryDl(false, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(false, url, true, false)
 	} else {
-		galleryErr = runGalleryDl(true, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(true, url, true, false)
 	}
 	if galleryErr != nil {
 		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
-
-	photoExts := []string{".jpg", ".jpeg", ".png"}
-	for _, ext := range photoExts {
-		if _, err := os.Stat("output" + ext); err == nil {
-			if ext != ".jpg" {
-				if err := os.Rename("output"+ext, "output.jpg"); err != nil {
-					log.Printf("Failed to rename output%s to output.jpg: %v", ext, err)
-				}
-			}
-			return true, nil // Photo
-		}
+	if isSuccess {
+		return true, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -124,25 +116,18 @@ func DownloadInstaVideo(url string) (bool, error) {
 
 	log.Printf("Намагаємось завантажити з gallery-dl Instagram URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
+	var isSuccess bool
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		galleryErr = runGalleryDl(false, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(false, url, true, false)
 	} else {
-		galleryErr = runGalleryDl(true, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(true, url, true, false)
 	}
 	if galleryErr != nil {
 		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
 
-	photoExts := []string{".jpg", ".jpeg", ".png"}
-	for _, ext := range photoExts {
-		if _, err := os.Stat("output" + ext); err == nil {
-			if ext != ".jpg" {
-				if err := os.Rename("output"+ext, "output.jpg"); err != nil {
-					log.Printf("Failed to rename output%s to output.jpg: %v", ext, err)
-				}
-			}
-			return true, nil // Photo
-		}
+	if isSuccess {
+		return true, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -219,7 +204,7 @@ func runYtdlp(useCookies bool, url string, isTT bool, isInsta bool) error {
 	return nil
 }
 
-func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) error {
+func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, error) {
 	cookiesTT := "./cookies/cookiesTT.txt"
 	cookiesINSTA := "./cookies/cookiesINSTA.txt"
 	var platform string
@@ -235,8 +220,8 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) error {
 	args := []string{
 		"-o", "overwrite=true",
 		"--no-part",
-		"-D", ".",
-		"-f", "output.{extension}",
+		"-D", "photo",
+		"-f", "output-{num:02d}.{extension}",
 		"-o", "directory=",
 	}
 	if useCookies {
@@ -248,8 +233,8 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-		return err
+		return false, err
 	}
 	log.Printf("gallery-dl download successful for %s", url)
-	return nil
+	return true, nil
 }

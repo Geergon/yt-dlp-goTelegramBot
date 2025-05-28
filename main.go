@@ -20,6 +20,8 @@ import (
 	"github.com/celestix/gotgproto/dispatcher/handlers/filters"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/celestix/gotgproto/sessionMaker"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func init() {
@@ -37,7 +39,10 @@ func init() {
 	log.SetOutput(logFile)
 }
 
-var viperMutex sync.RWMutex
+var (
+	viperMutex sync.RWMutex
+	bot        *tgbotapi.BotAPI
+)
 
 func main() {
 	err := godotenv.Load()
@@ -95,6 +100,11 @@ func main() {
 			return
 		}
 	})
+
+	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
+	if err != nil {
+		log.Fatalf("Помилка ініціалізації бота: %v", err)
+	}
 
 	client, err := gotgproto.NewClient(
 		// Get AppID from https://my.telegram.org/apps
