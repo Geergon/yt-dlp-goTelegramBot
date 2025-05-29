@@ -2,9 +2,11 @@ package yt
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -14,19 +16,19 @@ type DownloadRequest struct {
 	URL string `json:"url"`
 }
 type VideoInfo struct {
-	IsLive  bool   `json:"isLive"`
-	WasLive bool   `json:"wasLive"`
-	ID      string `json:"ID"`
-	Title   string `json:"Title"`
+	Duration int `json:"Duration"`
+	// IsLive  bool   `json:"isLive"`
+	// WasLive bool   `json:"wasLive"`
+	// ID      string `json:"ID"`
+	// Title   string `json:"Title"`
 }
 
 var viperMutex sync.RWMutex
 
-func DownloadYTVideo(url string) error {
+func DownloadYTVideo(url string, longVideoDownload bool) error {
 	viperMutex.RLock()
 	filter := viper.GetString("yt-dlp_filter")
 	duration := viper.GetString("duration")
-	longVideoDownload := viper.GetBool("long_video_download")
 	viperMutex.RUnlock()
 
 	cookies := "./cookies/cookiesYT.txt"
@@ -237,4 +239,71 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, e
 	}
 	log.Printf("gallery-dl download successful for %s", url)
 	return true, nil
+}
+
+func DownloadAudio(url string, platform string) ([]string, error) {
+	dir := "./audio"
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err = os.Mkdir(dir, 0755)
+		if err != nil {
+			log.Printf("Помилка створення папки %s: %v", dir, err)
+			return nil, err
+		}
+	}
+
+	audio := os.DirFS(dir)
+	mp3Files, err := fs.Glob(audio, "*.mp3")
+	if err != nil {
+		fmt.Println("error")
+	}
+	for _, m := range mp3Files {
+		path := path.Join(dir, m)
+		os.Remove(path)
+	}
+
+	var cookies string
+	switch platform {
+	case "YouTube":
+		cookies = "./cookies/cookiesYT.txt"
+	case "TikTok":
+		cookies = "./cookies/cookiesTT.txt"
+	case "Instagram":
+		cookies = "./cookies/cookiesINSTA.txt"
+	}
+
+	args := []string{
+		"--extract-audio",
+		"--audio-format", "mp3",
+		"--audio-quality", "192K",
+		"-o", "./audio/%(title)s.%(ext)s",
+	}
+
+	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platform, err, string(output))
+		return nil, err
+	}
+	log.Printf("yt-dlp download successful for %s", url)
+
+	if err == nil {
+		var audioName []string
+		for _, audio := range mp3Files {
+			audioName = append(audioName, path.Join(dir, audio))
+		}
+		if len(audioName) == 0 {
+			log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
+			return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
+		}
+		log.Printf("Знайдено аудіофайли: %v", audioName)
+		return audioName, nil
+	}
+	return nil, err
 }

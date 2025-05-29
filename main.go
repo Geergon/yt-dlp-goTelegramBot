@@ -122,16 +122,18 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("logs", tgbot.SendLogs))
 	dispatcher.AddHandler(handlers.NewCommand("update", tgbot.UpdateYtdlp))
 	dispatcher.AddHandler(handlers.NewCommand("fragment", tgbot.Fragment))
+	dispatcher.AddHandler(handlers.NewCommand("audio", tgbot.Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", tgbot.Download))
-	dispatcher.AddHandler(handlers.NewCommand("start"+client.Self.Username, func(ctx *ext.Context, u *ext.Update) error {
+	dispatcher.AddHandler(handlers.NewCommand("start"+"@"+client.Self.Username, func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\n
 			Команди:\n
 			/logs - отримати логи\n
-			/update - оновити yt-dlp\n
-			/fragments - завантажити фрагмент відео, 
-			/download - ручне завантаження відео`,
+			/update - оновити yt-dlp і gallery-dl\n
+			/fragments - завантажити фрагмент відео\n 
+			/download - ручне завантаження відео\n
+			/audio - завантажити аудіо`,
 		})
 		if err != nil {
 			log.Printf("Помилка надсилання повідомлення: %v", err)
