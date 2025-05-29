@@ -1,4 +1,6 @@
 .env
 cookies/
-db/
+db/session
 bot.log
+photo/
+

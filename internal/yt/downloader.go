@@ -3,11 +3,11 @@ package yt
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
+	"path"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -17,56 +17,47 @@ type DownloadRequest struct {
 	URL string `json:"url"`
 }
 type VideoInfo struct {
-	IsLive  bool   `json:"isLive"`
-	WasLive bool   `json:"wasLive"`
-	ID      string `json:"ID"`
-	Title   string `json:"Title"`
+	Duration int `json:"Duration"`
+	// IsLive  bool   `json:"isLive"`
+	// WasLive bool   `json:"wasLive"`
+	// ID      string `json:"ID"`
+	// Title   string `json:"Title"`
 }
 
 var viperMutex sync.RWMutex
 
-func DownloadYTVideo(url string) error {
+func DownloadYTVideo(url string, longVideoDownload bool) error {
 	viperMutex.RLock()
 	filter := viper.GetString("yt-dlp_filter")
+	duration := viper.GetString("duration")
 	viperMutex.RUnlock()
 
 	cookies := "./cookies/cookiesYT.txt"
-	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		log.Println("Файл кукі не знайдено")
-		cmd := exec.Command(
-			"yt-dlp",
-			"-f", filter,
-			"--merge-output-format", "mp4",
-			"-o", "output.%(ext)s",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-			return err
-		}
+	useCookies := true
 
-		log.Printf("Завантаження %s завершено успішно", url)
-		return nil
-	} else {
-		log.Println("Файл кукі знайдено")
-		cmd := exec.Command(
-			"yt-dlp",
-			"-f", filter,
-			"--cookies", cookies,
-			"--merge-output-format", "mp4",
-			"-o", "output.%(ext)s",
-			url,
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-			return err
-		}
-
-		log.Printf("Завантаження %s завершено успішно", url)
-		return nil
+	args := []string{
+		"-f", filter,
+		"--merge-output-format", "mp4",
+		"--output", "output.%(ext)s",
 	}
+	if useCookies {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+	if !longVideoDownload {
+		args = append(args, "--match-filter", fmt.Sprintf("duration<%s", duration))
+	}
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
+		return err
+	}
+
+	log.Printf("Завантаження %s завершено успішно", url)
+	return nil
 }
 
 func DownloadTTVideo(url string) (bool, []string, error) {
@@ -89,10 +80,11 @@ func DownloadTTVideo(url string) (bool, []string, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl TikTok URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var filePaths []string
 	var galleryErr error
+	var isSuccess bool
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		filePaths, galleryErr = runGalleryDl(false, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(false, url, true, false)
 	} else {
-		filePaths, galleryErr = runGalleryDl(true, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(true, url, true, false)
 	}
 	if galleryErr != nil {
 		return false, nil, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
@@ -101,17 +93,8 @@ func DownloadTTVideo(url string) (bool, []string, error) {
 	if len(filePaths) > 0 {
 		return true, filePaths, nil // Photo
 	}
-
-	photoExts := []string{".jpg", ".jpeg", ".png"}
-	for _, ext := range photoExts {
-		if _, err := os.Stat("output" + ext); err == nil {
-			if ext != ".jpg" {
-				if err := os.Rename("output"+ext, "output.jpg"); err != nil {
-					log.Printf("Failed to rename output%s to output.jpg: %v", ext, err)
-				}
-			}
-			return true, filePaths, nil // Photo
-		}
+	if isSuccess {
+		return true, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -142,10 +125,11 @@ func DownloadInstaVideo(url string) (bool, []string, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl Instagram URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var filePaths []string
 	var galleryErr error
+	var isSuccess bool
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		filePaths, galleryErr = runGalleryDl(false, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(false, url, true, false)
 	} else {
-		filePaths, galleryErr = runGalleryDl(true, url, true, false)
+		isSuccess, galleryErr = runGalleryDl(true, url, true, false)
 	}
 	if galleryErr != nil {
 		return false, nil, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
@@ -155,16 +139,8 @@ func DownloadInstaVideo(url string) (bool, []string, error) {
 		return true, filePaths, nil // Photo
 	}
 
-	photoExts := []string{".jpg", ".jpeg", ".png"}
-	for _, ext := range photoExts {
-		if _, err := os.Stat("output" + ext); err == nil {
-			if ext != ".jpg" {
-				if err := os.Rename("output"+ext, "output.jpg"); err != nil {
-					log.Printf("Failed to rename output%s to output.jpg: %v", ext, err)
-				}
-			}
-			return true, filePaths, nil // Photo
-		}
+	if isSuccess {
+		return true, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -175,18 +151,34 @@ func DownloadInstaVideo(url string) (bool, []string, error) {
 	return false, nil, os.ErrNotExist
 }
 
-func GetThumb(url string) string {
-	cmd := exec.Command("yt-dlp",
+func GetThumb(url string, platform string) string {
+	var cookies string
+	switch platform {
+	case "YouTube":
+		cookies = "./cookies/cookiesYT.txt"
+	case "TikTok":
+		cookies = "./cookies/cookiesTT.txt"
+	case "Instagram":
+		cookies = "./cookies/cookiesINSTA.txt"
+	}
+	args := []string{
 		"--skip-download",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"--output", "thumb.%(ext)s",
-		url,
-	)
+	}
+	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
 
 	err := cmd.Run()
 	if err != nil {
 		log.Printf("Помилка при отриманні прев'ю: %v", err)
+		return ""
 	}
 	return "thumb.jpg"
 }
@@ -225,10 +217,12 @@ func runYtdlp(useCookies bool, url string, isTT bool, isInsta bool) error {
 	return nil
 }
 
-func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (filePaths []string, err error) {
-	var platform, cookies string
-	switch {
-	case isTT:
+func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, error) {
+	cookiesTT := "./cookies/cookiesTT.txt"
+	cookiesINSTA := "./cookies/cookiesINSTA.txt"
+	var platform string
+	var cookies string
+	if isTT {
 		platform = "TikTok"
 		cookies = "./cookies/cookiesTT.txt"
 	case isInsta:
@@ -257,52 +251,91 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (filePat
 		"-f", "output-{num:02d}.{extension}",
 		"-o", "directory=",
 	}
+	args := []string{
+		"-o", "overwrite=true",
+		"--no-part",
+		"-D", "photo",
+		"-f", "output-{num:02d}.{extension}",
+		"-o", "directory=",
+	}
 	if useCookies {
 		args = append(args, "--cookies", cookies)
 	}
 	args = append(args, url)
 
 	cmd := exec.Command("gallery-dl", args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("gallery-dl error (%s): %v\nStderr: %s", platform, err, stderr.String())
-		return nil, fmt.Errorf("gallery-dl failed for %s: %v", platform, err)
+		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
+		return false, err
 	}
-	log.Printf("gallery-dl stdout (%s): %s", platform, stdout.String())
 	log.Printf("gallery-dl download successful for %s", url)
+	return true, nil
+}
 
-	lines := strings.Split(stdout.String(), "\n")
-	validExtensions := map[string]bool{
-		".jpg":  true,
-		".png":  true,
-		".jpeg": true,
+func DownloadAudio(url string, platform string) ([]string, error) {
+	dir := "./audio"
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err = os.Mkdir(dir, 0755)
+		if err != nil {
+			log.Printf("Помилка створення папки %s: %v", dir, err)
+			return nil, err
+		}
 	}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(line))
-		if !validExtensions[ext] {
-			log.Printf("Skipping file with invalid extension: %s", line)
-			continue
-		}
-		if _, err := os.Stat(line); err != nil {
-			log.Printf("File does not exist: %s", line)
-			continue
-		}
-		filePaths = append(filePaths, line)
+	audio := os.DirFS(dir)
+	mp3Files, err := fs.Glob(audio, "*.mp3")
+	if err != nil {
+		fmt.Println("error")
+	}
+	for _, m := range mp3Files {
+		path := path.Join(dir, m)
+		os.Remove(path)
 	}
 
-	if len(filePaths) == 0 {
-		return nil, fmt.Errorf("no valid image files found for %s", platform)
+	var cookies string
+	switch platform {
+	case "YouTube":
+		cookies = "./cookies/cookiesYT.txt"
+	case "TikTok":
+		cookies = "./cookies/cookiesTT.txt"
+	case "Instagram":
+		cookies = "./cookies/cookiesINSTA.txt"
 	}
 
-	return filePaths, nil
+	args := []string{
+		"--extract-audio",
+		"--audio-format", "mp3",
+		"--audio-quality", "192K",
+		"-o", "./audio/%(title)s.%(ext)s",
+	}
+
+	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
+		log.Println("Використовуємо кукі")
+		args = append(args, "--cookies", cookies)
+	}
+
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platform, err, string(output))
+		return nil, err
+	}
+	log.Printf("yt-dlp download successful for %s", url)
+
+	if err == nil {
+		var audioName []string
+		for _, audio := range mp3Files {
+			audioName = append(audioName, path.Join(dir, audio))
+		}
+		if len(audioName) == 0 {
+			log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
+			return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
+		}
+		log.Printf("Знайдено аудіофайли: %v", audioName)
+		return audioName, nil
+	}
+	return nil, err
 }
