@@ -1,13 +1,13 @@
 package yt
 
 import (
-	"bytes"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -26,7 +26,7 @@ type VideoInfo struct {
 
 var viperMutex sync.RWMutex
 
-func DownloadYTVideo(url string, longVideoDownload bool) error {
+func DownloadYTVideo(url string, longVideoDownload bool) (bool, []string, error) {
 	viperMutex.RLock()
 	filter := viper.GetString("yt-dlp_filter")
 	duration := viper.GetString("duration")
@@ -53,11 +53,11 @@ func DownloadYTVideo(url string, longVideoDownload bool) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(output))
-		return err
+		return false, nil, err
 	}
 
 	log.Printf("Завантаження %s завершено успішно", url)
-	return nil
+	return false, nil, nil
 }
 
 func DownloadTTVideo(url string) (bool, []string, error) {
@@ -94,7 +94,7 @@ func DownloadTTVideo(url string) (bool, []string, error) {
 		return true, filePaths, nil // Photo
 	}
 	if isSuccess {
-		return true, nil // Photo
+		return true, filePaths, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -140,7 +140,7 @@ func DownloadInstaVideo(url string) (bool, []string, error) {
 	}
 
 	if isSuccess {
-		return true, nil // Photo
+		return true, nil, nil // Photo
 	}
 
 	if _, err := os.Stat("output.mp4"); err == nil {
@@ -218,18 +218,15 @@ func runYtdlp(useCookies bool, url string, isTT bool, isInsta bool) error {
 }
 
 func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, error) {
-	cookiesTT := "./cookies/cookiesTT.txt"
-	cookiesINSTA := "./cookies/cookiesINSTA.txt"
 	var platform string
 	var cookies string
 	if isTT {
 		platform = "TikTok"
 		cookies = "./cookies/cookiesTT.txt"
-	case isInsta:
+	}
+	if isInsta {
 		platform = "Instagram"
 		cookies = "./cookies/cookiesINSTA.txt"
-	default:
-		return nil, fmt.Errorf("no platform specified (TikTok or Instagram)")
 	}
 
 	for _, ext := range []string{"jpg", "png", "jpeg"} {
@@ -244,13 +241,6 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, e
 		}
 	}
 
-	args := []string{
-		"-o", "overwrite=false",
-		"--no-part",
-		"-D", ".",
-		"-f", "output-{num:02d}.{extension}",
-		"-o", "directory=",
-	}
 	args := []string{
 		"-o", "overwrite=true",
 		"--no-part",

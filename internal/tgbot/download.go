@@ -459,13 +459,13 @@ func url(update *ext.Update) (string, bool, string) {
 }
 
 func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, sentMsgId int, longVideoDownload bool) (bool, string, error) {
-	var downloadFunc func(string) (bool, error)
+	var downloadFunc func(string) (bool, []string, error)
 	var mediaFileName string
 	switch platform {
 	case "YouTube":
-		downloadFunc = func(url string) (bool, error) {
-			err := yt.DownloadYTVideo(url, longVideoDownload)
-			return false, err // Always video
+		downloadFunc = func(url string) (bool, []string, error) {
+			_, _, err := yt.DownloadYTVideo(url, longVideoDownload)
+			return false, nil, err // Always video
 		}
 		mediaFileName = "output.mp4"
 	case "TikTok":
@@ -475,14 +475,13 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 		downloadFunc = yt.DownloadInstaVideo
 		mediaFileName = "output.mp4"
 	}
-
 	const maxAttempts = 3
 	const retryDelay = 10 * time.Second
 
 	var downloadErr error
 	var isPhoto bool
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		isPhoto, downloadErr = downloadFunc(url)
+		isPhoto, _, downloadErr = downloadFunc(url)
 		if downloadErr == nil || isPhoto {
 			break
 		}
