@@ -1,4 +1,4 @@
-# yt-dlp-goTelegramBot
+# yt-dlp-goTelegramBot 🇺🇦
 
 This is a small and simple bot for private chats, implemented using MTProto via [GoTGProto](https://github.com/celestix/gotgproto/tree/beta). This allows bypassing the BotAPI limitation on uploaded file sizes under 50 MB. The bot can download videos from YouTube, TikTok, and Instagram. The bot supports filtering videos by size, resolution, and other parameters, with flexible configuration via a `config.toml` file. It is designed for automated media downloading with customizable constraints.
 
