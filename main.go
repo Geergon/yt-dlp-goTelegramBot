@@ -41,6 +41,8 @@ func init() {
 var (
 	viperMutex sync.RWMutex
 	bot        *tgbotapi.BotAPI
+	urlQueue   = make(chan tgbot.URLRequest, 100)
+	semaphore  = make(chan struct{}, 2)
 )
 
 func main() {
@@ -116,9 +118,19 @@ func main() {
 		log.Fatalln("Помилка при запуску бота:", err)
 	}
 
+	go StartWorkers(client, 2)
 	dispatcher := client.Dispatcher
 
-	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, tgbot.Echo), 1)
+	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, func(ctx *ext.Context, u *ext.Update) error {
+		url, isValid, platform := tgbot.Url(u)
+		if !isValid {
+			return nil
+		}
+		// Додаємо URL до черги
+		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Context: ctx, Update: u}
+		return nil
+	}), 1)
+	// dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, tgbot.Echo), 1)
 	dispatcher.AddHandler(handlers.NewCommand("logs", tgbot.SendLogs))
 	dispatcher.AddHandler(handlers.NewCommand("update", tgbot.UpdateYtdlp))
 	dispatcher.AddHandler(handlers.NewCommand("fragment", tgbot.Fragment))
@@ -147,4 +159,22 @@ func main() {
 	fmt.Printf("Бот (@%s) стартував...\n", client.Self.Username)
 
 	client.Idle()
+}
+
+func StartWorkers(client *gotgproto.Client, numWorkers int) {
+	for i := range numWorkers {
+		go func(workerID int) {
+			for req := range urlQueue {
+				// Захоплюємо семафор
+				semaphore <- struct{}{}
+				log.Printf("Воркер %d обробляє URL: %s", workerID, req.URL)
+				err := tgbot.ProcessURL(req)
+				if err != nil {
+					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
+				}
+				// Звільняємо семафор
+				<-semaphore
+			}
+		}(i)
+	}
 }
