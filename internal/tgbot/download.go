@@ -1,6 +1,7 @@
 package tgbot
 
 import (
+	"context"
 	"fmt"
 	"image/jpeg"
 	"io/fs"
@@ -44,6 +45,36 @@ func init() {
 }
 
 func ProcessURL(req URLRequest) error {
+	// Створюємо контекст із таймаутом у 10 хвилин
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Виконуємо обробку в окремій горутині, щоб перевіряти таймаут
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- processURLWithContext(req)
+	}()
+
+	select {
+	case err := <-errChan:
+		return err
+	case <-ctx.Done():
+		// Якщо минув таймаут, надсилаємо повідомлення про помилку
+		chatID := Access(req.Context, req.Update)
+		if chatID != 0 {
+			_, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: fmt.Sprintf("Обробка URL %s перервана через таймаут (10 хвилин)", req.URL),
+			})
+			if err != nil {
+				log.Printf("Помилка надсилання повідомлення про таймаут: %v", err)
+			}
+		}
+		log.Printf("Таймаут обробки URL %s після 10 хвилин", req.URL)
+		return ctx.Err()
+	}
+}
+
+func processURLWithContext(req URLRequest) error {
 	viperMutex.RLock()
 	autoDownload := viper.GetBool("auto_download")
 	longVideoDownload := viper.GetBool("long_video_download")
@@ -117,79 +148,79 @@ func ProcessURL(req URLRequest) error {
 	return fmt.Errorf("Автозавантаення вимкнено")
 }
 
-func Echo(ctx *ext.Context, update *ext.Update) error {
-	viperMutex.RLock()
-	autoDownload := viper.GetBool("auto_download")
-	longVideoDownload := viper.GetBool("long_video_download")
-	duration := viper.GetString("duration")
-	viperMutex.RUnlock()
-	if autoDownload {
-		chatID := Access(ctx, update)
-		if chatID == 0 {
-			log.Println("Відмова у доступі")
-			return nil
-		}
+// func Echo(ctx *ext.Context, update *ext.Update) error {
+// 	viperMutex.RLock()
+// 	autoDownload := viper.GetBool("auto_download")
+// 	longVideoDownload := viper.GetBool("long_video_download")
+// 	duration := viper.GetString("duration")
+// 	viperMutex.RUnlock()
+// 	if autoDownload {
+// 		chatID := Access(ctx, update)
+// 		if chatID == 0 {
+// 			log.Println("Відмова у доступі")
+// 			return nil
+// 		}
 
-		msg := update.EffectiveMessage
-		text := msg.Text
-		if strings.Contains(text, "/download") || strings.Contains(text, "/audio") {
-			return nil
-		}
+// 		msg := update.EffectiveMessage
+// 		text := msg.Text
+// 		if strings.Contains(text, "/download") || strings.Contains(text, "/audio") {
+// 			return nil
+// 		}
 
-		url, isValid, platform := Url(update)
-		if !isValid {
-			return nil
-		}
-		duration, err := strconv.ParseInt(duration, 10, 64)
+// 		url, isValid, platform := Url(update)
+// 		if !isValid {
+// 			return nil
+// 		}
+// 		duration, err := strconv.ParseInt(duration, 10, 64)
 
-		info, err := yt.GetVideoInfo(url, platform)
-		if err == nil {
-			if info.Duration >= int(duration) {
-				return nil
-			}
-		}
+// 		info, err := yt.GetVideoInfo(url, platform)
+// 		if err == nil {
+// 			if info.Duration >= int(duration) {
+// 				return nil
+// 			}
+// 		}
 
-		sentMsg, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
-		})
-		if err != nil {
-			log.Printf("Помилка надсилання повідомлення про початок: %v", err)
-			return err
-		}
-		sentMsgId := sentMsg.GetID()
+// 		sentMsg, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+// 			Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
+// 		})
+// 		if err != nil {
+// 			log.Printf("Помилка надсилання повідомлення про початок: %v", err)
+// 			return err
+// 		}
+// 		sentMsgId := sentMsg.GetID()
 
-		isPhoto, mediaFileName, downloadErr := downloadMedia(ctx, chatID, url, platform, sentMsgId, longVideoDownload)
-		if downloadErr != nil {
-			log.Println("Помилка при завантаженні відео")
-			return downloadErr
-		}
+// 		isPhoto, mediaFileName, downloadErr := downloadMedia(ctx, chatID, url, platform, sentMsgId, longVideoDownload)
+// 		if downloadErr != nil {
+// 			log.Println("Помилка при завантаженні відео")
+// 			return downloadErr
+// 		}
 
-		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-			ID:      sentMsg.GetID(),
-			Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
-		})
-		images, media, thumbName, errCheck := mediaCheck(ctx, chatID, sentMsgId, url, platform, isPhoto, mediaFileName)
-		if errCheck != nil {
-			log.Printf("Помилка при обробці медіа: %v", errCheck)
-			return errCheck
-		}
+// 		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+// 			ID:      sentMsg.GetID(),
+// 			Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
+// 		})
+// 		images, media, thumbName, errCheck := mediaCheck(ctx, chatID, sentMsgId, url, platform, isPhoto, mediaFileName)
+// 		if errCheck != nil {
+// 			log.Printf("Помилка при обробці медіа: %v", errCheck)
+// 			return errCheck
+// 		}
 
-		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-			ID:      sentMsg.GetID(),
-			Message: "Надсилання: \n[◼◼◼◼◼◼◼◻]",
-		})
-		err = sendMedia(ctx, update, url, isPhoto, false, images, media, chatID, sentMsgId)
-		if err != nil {
-			log.Printf("Помилка при надсиланні повідомлення: %v", err)
-			return err
-		}
+// 		ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+// 			ID:      sentMsg.GetID(),
+// 			Message: "Надсилання: \n[◼◼◼◼◼◼◼◻]",
+// 		})
+// 		err = sendMedia(ctx, update, url, isPhoto, false, images, media, chatID, sentMsgId)
+// 		if err != nil {
+// 			log.Printf("Помилка при надсиланні повідомлення: %v", err)
+// 			return err
+// 		}
 
-		deleteMedia(ctx, update, url, chatID, isPhoto, mediaFileName, thumbName)
-		return nil
+// 		deleteMedia(ctx, update, url, chatID, isPhoto, mediaFileName, thumbName)
+// 		return nil
 
-	}
-	return nil
-}
+// 	}
+// 	return nil
+// }
 
 func Download(ctx *ext.Context, update *ext.Update) error {
 	chatID := Access(ctx, update)
