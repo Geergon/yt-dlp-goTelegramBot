@@ -124,7 +124,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("fragment", tgbot.Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", tgbot.Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", tgbot.Download))
-	dispatcher.AddHandler(handlers.NewCommand("start"+"@"+client.Self.Username, func(ctx *ext.Context, u *ext.Update) error {
+	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\n
