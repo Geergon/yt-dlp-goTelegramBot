@@ -139,6 +139,7 @@ func processURLWithContext(req URLRequest) error {
 		err = sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
 		if err != nil {
 			log.Printf("Помилка при надсиланні повідомлення: %v", err)
+			deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName)
 			return err
 		}
 
@@ -265,6 +266,7 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	err = sendMedia(ctx, update, url, isPhoto, false, images, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
+		deleteMedia(ctx, update, url, chatID, isPhoto, mediaFileName, thumbName)
 		return err
 	}
 
