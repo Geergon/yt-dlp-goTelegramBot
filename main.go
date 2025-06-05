@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/tgbot"
 	"github.com/fsnotify/fsnotify"
@@ -24,7 +27,7 @@ import (
 )
 
 func init() {
-	logFile, err := os.OpenFile("bot.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile("bot.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("Помилка відкриття файлу логів: %v", err)
 	}
@@ -36,6 +39,8 @@ func init() {
 		Compress:   true,
 	})
 	log.SetOutput(logFile)
+
+	go startCleanupRoutine()
 }
 
 var (
@@ -58,6 +63,7 @@ func main() {
 	viper.SetDefault("duration", "600")
 	viper.SetDefault("long_video_download", false)
 	viper.SafeWriteConfig()
+
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			log.Println("Конфіг файл не знайдений")
@@ -177,4 +183,59 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 			}
 		}(i)
 	}
+}
+
+func startCleanupRoutine() {
+	const cleanupInterval = 30 * time.Minute  // Очищення кожні 30 хвилин
+	const fileAgeThreshold = 10 * time.Minute // Видаляємо файли, старші за 1 годину
+
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Перевіряємо, чи всі воркери вільні
+		if len(semaphore) == 0 && len(urlQueue) == 0 {
+			log.Println("Воркери вільні, запускаємо очищення папок")
+			if err := cleanOldFiles(fileAgeThreshold); err != nil {
+				log.Printf("Помилка очищення папок: %v", err)
+			}
+		} else {
+			log.Println("Воркери зайняті або є завдання в черзі, пропускаємо очищення")
+		}
+	}
+}
+
+func cleanOldFiles(threshold time.Duration) error {
+	dirs := []string{"video", "photo", "audio"}
+	now := time.Now()
+
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil // Пропускаємо директорії
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				log.Printf("Помилка отримання інформації про файл %s: %v", path, err)
+				return nil // Пропускаємо файл
+			}
+
+			if now.Sub(info.ModTime()) > threshold {
+				if err := os.Remove(path); err != nil {
+					log.Printf("Помилка видалення файлу %s: %v", path, err)
+					return nil // Пропускаємо помилку, щоб продовжити
+				}
+				log.Printf("Видалено старий файл: %s", path)
+			}
+			return nil
+		})
+		if err != nil {
+			log.Printf("Помилка обробки директорії %s: %v", dir, err)
+		}
+	}
+	return nil
 }

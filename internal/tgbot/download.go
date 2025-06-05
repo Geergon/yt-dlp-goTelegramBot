@@ -24,6 +24,8 @@ import (
 type URLRequest struct {
 	URL      string
 	Platform string
+	Command  string
+	Fragment string
 	Context  *ext.Context
 	Update   *ext.Update
 }
@@ -31,17 +33,29 @@ type URLRequest struct {
 var bot *tgbotapi.BotAPI
 
 func init() {
+	err := os.MkdirAll("video", 0755)
+	if err != nil {
+		log.Fatalf("Помилка створення папки video: %v", err)
+	}
+	err = os.MkdirAll("photo", 0755)
+	if err != nil {
+		log.Fatalf("Помилка створення папки video: %v", err)
+	}
+	err = os.MkdirAll("audio", 0755)
+	if err != nil {
+		log.Fatalf("Помилка створення папки video: %v", err)
+	}
+
 	botToken := os.Getenv("BOT_TOKEN")
 	if botToken == "" {
 		log.Fatal("BOT_TOKEN не задано")
 	}
 
-	var err error
 	bot, err = tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		log.Fatalf("Помилка ініціалізації бота: %v", err)
 	}
-	bot.Debug = true
+	bot.Debug = false
 }
 
 func ProcessURL(req URLRequest) error {
@@ -573,21 +587,31 @@ func Url(update *ext.Update) (string, bool, string) {
 }
 
 func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, sentMsgId int, longVideoDownload bool) (bool, string, error) {
-	var downloadFunc func(string) (bool, []string, error)
-	var mediaFileName string
+	var downloadFunc func(string, string) (bool, error)
+	// var mediaFileName string
+	timeUnix := time.Now().UnixMilli()
+	o := fmt.Sprintf("./video/output%d", timeUnix)
+	mediaFileName := fmt.Sprintf("%s.mp4", o)
 	switch platform {
 	case "YouTube":
-		downloadFunc = func(url string) (bool, []string, error) {
-			_, _, err := yt.DownloadYTVideo(url, longVideoDownload)
-			return false, nil, err // Always video
+		downloadFunc = func(url string, output string) (bool, error) {
+			_, err := yt.DownloadYTVideo(url, output, longVideoDownload)
+			return false, err // Always video
 		}
-		mediaFileName = "output.mp4"
+		// mediaFileName = "output.mp4"
 	case "TikTok":
-		downloadFunc = yt.DownloadTTVideo
-		mediaFileName = "output.mp4"
+		downloadFunc = func(url string, output string) (bool, error) {
+			isPhotos, err := yt.DownloadTTVideo(url, output)
+			return isPhotos, err
+		}
+		// mediaFileName = "output.mp4"
 	case "Instagram":
-		downloadFunc = yt.DownloadInstaVideo
-		mediaFileName = "output.mp4"
+		// downloadFunc = yt.DownloadInstaVideo()
+		downloadFunc = func(url string, output string) (bool, error) {
+			isPhotos, err := yt.DownloadInstaVideo(url, output)
+			return isPhotos, err
+		}
+		// mediaFileName = "output.mp4"
 	}
 	const maxAttempts = 3
 	const retryDelay = 10 * time.Second
@@ -595,7 +619,7 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	var downloadErr error
 	var isPhoto bool
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		isPhoto, _, downloadErr = downloadFunc(url)
+		isPhoto, downloadErr = downloadFunc(url, mediaFileName)
 		if downloadErr == nil || isPhoto {
 			break
 		}
