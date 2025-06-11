@@ -1,7 +1,7 @@
 allowed_chat = []
 allowed_user = []
 auto_download = true
-delete_url = false
-yt-dlp_filter = 'bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]'
+delete_url = true
 duration = '600'
 long_video_download = false
+yt-dlp_filter = 'bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]'

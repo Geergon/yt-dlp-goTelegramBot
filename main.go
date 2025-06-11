@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,7 @@ func main() {
 	viper.SetDefault("yt-dlp_filter", "bv[filesize<500M][ext=mp4]+ba[ext=m4a]/bv[height=720][filesize<400M][ext=mp4]+ba[ext=m4a]/bv[height=480][filesize<300M][ext=mp4]+ba[ext=m4a]")
 	viper.SetDefault("duration", "600")
 	viper.SetDefault("long_video_download", false)
+	viper.SetDefault("live_filter", "!is_live & !was_live")
 	viper.SafeWriteConfig()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -133,15 +135,15 @@ func main() {
 			return nil
 		}
 		// Додаємо URL до черги
-		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Context: ctx, Update: u}
+		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u}
 		return nil
 	}), 1)
 	// dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, tgbot.Echo), 1)
 	dispatcher.AddHandler(handlers.NewCommand("logs", tgbot.SendLogs))
 	dispatcher.AddHandler(handlers.NewCommand("update", tgbot.UpdateYtdlp))
-	dispatcher.AddHandler(handlers.NewCommand("fragment", tgbot.Fragment))
-	dispatcher.AddHandler(handlers.NewCommand("audio", tgbot.Audio))
-	dispatcher.AddHandler(handlers.NewCommand("download", tgbot.Download))
+	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
+	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
+	dispatcher.AddHandler(handlers.NewCommand("download", Download))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -149,7 +151,7 @@ func main() {
 			Команди:\n
 			/logs - отримати логи\n
 			/update - оновити yt-dlp і gallery-dl\n
-			/fragments - завантажити фрагмент відео\n 
+			/fragment - завантажити фрагмент відео\n 
 			/download - ручне завантаження відео\n
 			/audio - завантажити аудіо`,
 		})
@@ -173,7 +175,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 			for req := range urlQueue {
 				// Захоплюємо семафор
 				semaphore <- struct{}{}
-				log.Printf("Воркер %d обробляє URL: %s", workerID, req.URL)
+				log.Printf("Воркер %d обробляє URL: %s (команда: %s)", workerID, req.URL, req.Command)
 				err := tgbot.ProcessURL(req)
 				if err != nil {
 					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
@@ -236,6 +238,91 @@ func cleanOldFiles(threshold time.Duration) error {
 		if err != nil {
 			log.Printf("Помилка обробки директорії %s: %v", dir, err)
 		}
+	}
+	return nil
+}
+
+func Audio(ctx *ext.Context, update *ext.Update) error {
+	chatID := tgbot.Access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+
+	url, isValid, platform := tgbot.Url(update)
+	if !isValid {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Невалідне URL або платформа не відповідає",
+		})
+		return err
+	}
+
+	urlQueue <- tgbot.URLRequest{
+		URL:      url,
+		Platform: platform,
+		Command:  "audio",
+		Context:  ctx,
+		Update:   update,
+	}
+	return nil
+}
+
+func Fragment(ctx *ext.Context, update *ext.Update) error {
+	chatID := tgbot.Access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+
+	args := strings.Fields(update.EffectiveMessage.Text)
+	if len(args) != 3 {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00",
+		})
+		return err
+	}
+
+	url := args[1]
+	fragment := args[2]
+
+	if strings.Contains(url, "help") {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00",
+		})
+		return err
+	}
+
+	urlQueue <- tgbot.URLRequest{
+		URL:      url,
+		Command:  "fragment",
+		Fragment: fragment,
+		Context:  ctx,
+		Update:   update,
+	}
+	return nil
+}
+
+func Download(ctx *ext.Context, update *ext.Update) error {
+	chatID := tgbot.Access(ctx, update)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+
+	url, isValid, platform := tgbot.Url(update)
+	if !isValid {
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Невалідне URL або платформа не підтримується",
+		})
+		return err
+	}
+
+	urlQueue <- tgbot.URLRequest{
+		URL:      url,
+		Platform: platform,
+		Command:  "download",
+		Context:  ctx,
+		Update:   update,
 	}
 	return nil
 }

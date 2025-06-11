@@ -17,11 +17,11 @@ type DownloadRequest struct {
 	URL string `json:"url"`
 }
 type VideoInfo struct {
-	Duration int `json:"Duration"`
-	// IsLive  bool   `json:"isLive"`
-	// WasLive bool   `json:"wasLive"`
-	// ID      string `json:"ID"`
-	// Title   string `json:"Title"`
+	Duration int  `json:"duration"`
+	IsLive   bool `json:"is_live"`
+	WasLive  bool `json:"was_live"`
+	// ID      string `json:"id"`
+	// Title   string `json:"title"`
 }
 
 var viperMutex sync.RWMutex
@@ -52,9 +52,12 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	cmd := exec.Command("yt-dlp", args...)
 	o, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(o))
-		return false, err
+		log.Println(err)
 	}
+	// if err != nil {
+	// 	log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(o))
+	// 	return false, err
+	// }
 
 	log.Printf("Завантаження %s завершено успішно", url)
 	return false, nil

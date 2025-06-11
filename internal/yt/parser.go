@@ -63,7 +63,7 @@ func GetVideoInfo(url string, platform string) (*VideoInfo, error) {
 		return &info, nil
 
 	} else {
-		cmd := exec.Command("sh", "-c", fmt.Sprintf(`yt-dlp -j "%s" | jq -c '{Duration: .duration}'`, url))
+		cmd := exec.Command("sh", "-c", fmt.Sprintf(`yt-dlp -j "%s" | jq -c '{is_live: .is_live, was_live: .was_live,duration: .duration}'`, url))
 		out, err := cmd.Output()
 		if err != nil {
 			log.Printf("помилка отримання інформації про відео: %v", err)
