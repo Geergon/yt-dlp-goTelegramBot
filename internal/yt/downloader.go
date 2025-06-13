@@ -54,10 +54,10 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	if err != nil {
 		log.Println(err)
 	}
-	// if err != nil {
-	// 	log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(o))
-	// 	return false, err
-	// }
+	if err != nil {
+		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(o))
+		return false, err
+	}
 
 	log.Printf("Завантаження %s завершено успішно", url)
 	return false, nil

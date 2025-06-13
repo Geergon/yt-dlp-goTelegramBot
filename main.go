@@ -45,10 +45,11 @@ func init() {
 }
 
 var (
-	viperMutex sync.RWMutex
-	bot        *tgbotapi.BotAPI
-	urlQueue   = make(chan tgbot.URLRequest, 100)
-	semaphore  = make(chan struct{}, 2)
+	viperMutex     sync.RWMutex
+	bot            *tgbotapi.BotAPI
+	urlQueue       = make(chan tgbot.URLRequest, 100)
+	semaphore      = make(chan struct{}, 2)
+	processingURLs = sync.Map{}
 )
 
 func main() {
@@ -134,6 +135,14 @@ func main() {
 		if !isValid {
 			return nil
 		}
+
+		// Перевіряємо, чи URL уже обробляється
+		_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+		if loaded {
+			log.Printf("URL %s уже обробляється, пропускаємо", url)
+			return nil
+		}
+
 		// Додаємо URL до черги
 		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u}
 		return nil
@@ -180,6 +189,8 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 				if err != nil {
 					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
 				}
+
+				processingURLs.Delete(req.URL)
 				// Звільняємо семафор
 				<-semaphore
 			}
