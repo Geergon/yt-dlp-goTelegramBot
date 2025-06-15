@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -35,7 +36,14 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	cookies := "./cookies/cookiesYT.txt"
 	useCookies := true
 
+	matchFilter := "!playlist"
+	if !longVideoDownload {
+		matchFilter = fmt.Sprintf("%s & duration<%s", matchFilter, duration)
+	}
+
 	args := []string{
+		"--break-on-reject",
+		"--match-filter", matchFilter,
 		"-f", filter,
 		"--merge-output-format", "mp4",
 		"--output", output,
@@ -43,9 +51,6 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	if useCookies {
 		log.Println("Використовуємо кукі")
 		args = append(args, "--cookies", cookies)
-	}
-	if !longVideoDownload {
-		args = append(args, "--match-filter", fmt.Sprintf("duration<%s", duration))
 	}
 	args = append(args, url)
 
@@ -56,6 +61,9 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	}
 	if err != nil {
 		log.Printf("yt-dlp error (YouTube): %v\nOutput: %s", err, string(o))
+		if strings.Contains(string(o), "rejected by filter") {
+			return false, fmt.Errorf("URL %s є плейлистом, завантаження відхилено", url)
+		}
 		return false, err
 	}
 

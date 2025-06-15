@@ -59,13 +59,13 @@ func init() {
 }
 
 func ProcessURL(req URLRequest) error {
-	// Створюємо контекст із таймаутом у 10 хвилин
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	// Виконуємо обробку в окремій горутині, щоб перевіряти таймаут
 	errChan := make(chan error, 1)
 	go func() {
+		log.Printf("Починаємо обробку URL %s (команда: %s)", req.URL, req.Command)
 		errChan <- processURLWithContext(req)
 	}()
 
