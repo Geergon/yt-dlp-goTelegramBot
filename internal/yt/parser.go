@@ -24,7 +24,7 @@ func GetYoutubeURL(text string) (string, bool) {
 }
 
 func GetTikTokURL(text string) (string, bool) {
-	ttr := regexp.MustCompile(`((http(s)?:\/\/)?(www\.|m\.|vm\.)?tiktok\.com\/((h5\/share\/usr\/|v\/|@[A-Za-z0-9_\-]+\/video\/|embed\/|trending\?shareId=|share\/user\/)?[A-Za-z0-9_\-]+\/?)(?:\?[^ ]*)?)`)
+	ttr := regexp.MustCompile(`((http(s)?:\/\/)?(www\.|m\.|vm\.|vt\.)?tiktok\.com\/((h5\/share\/usr\/|v\/|@[A-Za-z0-9_\-]+\/video\/|embed\/|trending\?shareId=|share\/user\/)?[A-Za-z0-9_\-]+\/?)(?:\?[^ ]*)?)`)
 	url := ttr.FindString(text)
 	return url, url != ""
 }

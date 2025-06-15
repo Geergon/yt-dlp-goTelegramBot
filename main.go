@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/tgbot"
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/tg"
@@ -132,7 +133,17 @@ func main() {
 
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, func(ctx *ext.Context, u *ext.Update) error {
 		url, isValid, platform := tgbot.Url(u)
+
+		if u.EffectiveMessage.EditDate != 0 {
+			return nil
+		}
+
 		if !isValid {
+			return nil
+		}
+
+		if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
+			log.Printf("URL %s містить параметр list, пропускаємо", url)
 			return nil
 		}
 
@@ -188,6 +199,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 				err := tgbot.ProcessURL(req)
 				if err != nil {
 					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
+					processingURLs.Delete(req.URL)
 				}
 
 				processingURLs.Delete(req.URL)
@@ -320,12 +332,70 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	url, isValid, platform := tgbot.Url(update)
-	if !isValid {
-		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "Невалідне URL або платформа не підтримується",
-		})
-		return err
+	var url, platform string
+	var isValid bool
+
+	if update.EffectiveMessage.ReplyTo != nil {
+
+		log.Println("Повідомлення не nil")
+		msgUpdate, err := bot.GetUpdates(tgbotapi.NewUpdate(update.EffectiveMessage.ID))
+		if err != nil {
+			log.Printf("Помилка отримання оновлення з ID %d: %v", update.EffectiveMessage.ID, err)
+			return err
+		}
+		if len(msgUpdate) == 0 {
+			log.Printf("Оновлення з ID %d не знайдено", update.EffectiveMessage.ID)
+			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "Повідомлення, на яке ви відповідаєте, не знайдено",
+			})
+			return err
+		}
+		tgMsg := msgUpdate[0].Message
+		if tgMsg == nil || tgMsg.ReplyToMessage == nil {
+			log.Printf("Повідомлення з ID %d не містить ReplyToMessage", update.EffectiveMessage.ID)
+			return err
+		}
+
+		replyText := tgMsg.ReplyToMessage.Text
+		log.Printf("ReplyToMessage text: %s", replyText)
+		if replyText != "" {
+			url, isValid = yt.GetYoutubeURL(replyText)
+			if !isValid {
+				log.Printf("Невалідний URL у повідомленні: %s", replyText)
+				_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+					Message: "У повідомленні, на яке ви відповідаєте, немає валідного YouTube URL",
+				})
+				return err
+			}
+			platform = "YouTube"
+		} else {
+			log.Println("ReplyToMessage не містить тексту")
+			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "Повідомлення, на яке ви відповідаєте, не містить тексту",
+			})
+			return err
+		}
+	} else {
+		log.Println("Команда не є відповіддю")
+		url, isValid, platform = tgbot.Url(update)
+		if !isValid {
+			log.Println("Невалідне URL або платформа не підтримується")
+			_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "Некоректний URL або платформа не підтримується",
+			})
+			return err
+		}
+	}
+
+	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
+		log.Printf("URL %s містить параметр list, пропускаємо", url)
+		return nil
+	}
+
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
 	}
 
 	urlQueue <- tgbot.URLRequest{
@@ -335,5 +405,6 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		Context:  ctx,
 		Update:   update,
 	}
+	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
 	return nil
 }
