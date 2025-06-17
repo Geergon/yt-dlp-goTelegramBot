@@ -194,6 +194,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 		go func(workerID int) {
 			for req := range urlQueue {
 				// Захоплюємо семафор
+				log.Printf("Черга URL: %v", urlQueue)
 				semaphore <- struct{}{}
 				log.Printf("Воркер %d обробляє URL: %s (команда: %s)", workerID, req.URL, req.Command)
 				err := tgbot.ProcessURL(req)
