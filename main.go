@@ -194,6 +194,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 		go func(workerID int) {
 			for req := range urlQueue {
 				// Захоплюємо семафор
+				log.Printf("Черга URL: %v", urlQueue)
 				semaphore <- struct{}{}
 				log.Printf("Воркер %d обробляє URL: %s (команда: %s)", workerID, req.URL, req.Command)
 				err := tgbot.ProcessURL(req)
@@ -337,44 +338,40 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 
 	if update.EffectiveMessage.ReplyTo != nil {
 
-		log.Println("Повідомлення не nil")
-		msgUpdate, err := bot.GetUpdates(tgbotapi.NewUpdate(update.EffectiveMessage.ID))
+		log.Println("Команда є відповіддю")
+		replyToMsgID := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader).ReplyToMsgID
+		log.Printf("ReplyToMsgID: %d", replyToMsgID)
+
+		config := tgbotapi.NewUpdate(0)
+		config.Timeout = 60
+		config.Limit = 1
+		config.Offset = -1
+		msgUpdates, err := bot.GetUpdates(config)
 		if err != nil {
-			log.Printf("Помилка отримання оновлення з ID %d: %v", update.EffectiveMessage.ID, err)
+			log.Printf("Помилка отримання оновлень: %v", err)
 			return err
 		}
-		if len(msgUpdate) == 0 {
-			log.Printf("Оновлення з ID %d не знайдено", update.EffectiveMessage.ID)
-			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-				Message: "Повідомлення, на яке ви відповідаєте, не знайдено",
-			})
+		if len(msgUpdates) == 0 {
+			log.Println("Жодного оновлення не отримано")
 			return err
 		}
-		tgMsg := msgUpdate[0].Message
+		tgMsg := msgUpdates[0].Message
 		if tgMsg == nil || tgMsg.ReplyToMessage == nil {
 			log.Printf("Повідомлення з ID %d не містить ReplyToMessage", update.EffectiveMessage.ID)
 			return err
 		}
-
-		replyText := tgMsg.ReplyToMessage.Text
-		log.Printf("ReplyToMessage text: %s", replyText)
-		if replyText != "" {
-			url, isValid = yt.GetYoutubeURL(replyText)
-			if !isValid {
-				log.Printf("Невалідний URL у повідомленні: %s", replyText)
-				_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-					Message: "У повідомленні, на яке ви відповідаєте, немає валідного YouTube URL",
-				})
-				return err
-			}
-			platform = "YouTube"
-		} else {
-			log.Println("ReplyToMessage не містить тексту")
-			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-				Message: "Повідомлення, на яке ви відповідаєте, не містить тексту",
-			})
+		if tgMsg.ReplyToMessage.MessageID != replyToMsgID {
+			log.Printf("ReplyToMsgID не співпадає: очікувалося %d, отримано %d", replyToMsgID, tgMsg.ReplyToMessage.MessageID)
 			return err
 		}
+		replyText := tgMsg.ReplyToMessage.Text
+		log.Printf("ReplyToMessage text: %s", replyText)
+		if replyText == "" {
+			log.Println("ReplyToMessage не містить тексту")
+			return err
+		}
+		platform = "YouTube"
+		url, isValid = yt.GetYoutubeURL(replyText)
 	} else {
 		log.Println("Команда не є відповіддю")
 		url, isValid, platform = tgbot.Url(update)
@@ -385,6 +382,11 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 			})
 			return err
 		}
+	}
+
+	if !yt.IsUrl(url) {
+		log.Println("Повідомлення не містить url")
+		return nil
 	}
 
 	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
