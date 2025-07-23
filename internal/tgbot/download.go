@@ -163,6 +163,15 @@ func processAutoDownload(req URLRequest, chatID int64) error {
 		if editErr != nil {
 			log.Printf("Помилка редагування повідомлення: %v", editErr)
 		}
+
+		// err := req.Context.DeleteMessages(chatID, []int{msg.ID})
+		// if err != nil {
+		// 	log.Printf("Помилка видалення повідомлення (ID: %d, ChatID: %d): %v", msg.ID, chatID, err)
+		// } else {
+		// 	log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", msg.ID, chatID, req.URL)
+		// }
+
+		deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, "", "")
 		deleteMsgTimer(req.Context, chatID, sentMsgId)
 		return downloadErr
 	}
@@ -186,6 +195,15 @@ func processAutoDownload(req URLRequest, chatID int64) error {
 		if editErr != nil {
 			log.Printf("Помилка редагування повідомлення: %v", editErr)
 		}
+
+		// err := req.Context.DeleteMessages(chatID, []int{msg.ID})
+		// if err != nil {
+		// 	log.Printf("Помилка видалення повідомлення (ID: %d, ChatID: %d): %v", msg.ID, chatID, err)
+		// } else {
+		// 	log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", msg.ID, chatID, req.URL)
+		// }
+
+		deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName)
 		deleteMsgTimer(req.Context, chatID, sentMsgId)
 		return errCheck
 	}
@@ -1043,7 +1061,7 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 }
 
 func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
-	const errorMessageTimeout = 5 * time.Second
+	const errorMessageTimeout = 60 * time.Second
 
 	time.AfterFunc(errorMessageTimeout, func() {
 		ctx.DeleteMessages(chatID, []int{sentMsgId})

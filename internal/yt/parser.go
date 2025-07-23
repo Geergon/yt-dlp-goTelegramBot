@@ -18,7 +18,7 @@ func IsUrl(str string) bool {
 }
 
 func GetYoutubeURL(text string) (string, bool) {
-	ytUrlRegexp := regexp.MustCompile(`((?:https?:)?\/\/)?((?:www|m)\.)?((?:youtube\.com|youtu.be))(\/(?:[\w\-]+\?v=|embed\/|v\/)?)([\w\-]+)(\S+)?`)
+	ytUrlRegexp := regexp.MustCompile(`((?:https?:)?\/\/)?((?:www|m)\.)?((?:youtube\.com|youtube-nocookie\.com|youtu\.be|music\.youtube\.com|http://googleusercontent\.com\/youtube\.com\/0))(\/(?:[\w\-]+\?v=|embed\/|v\/|watch\?v=|playlist\?list=)?)([\w\-]+)(&[\w=\-]+)?`)
 	url := ytUrlRegexp.FindString(text)
 	return url, url != ""
 }
