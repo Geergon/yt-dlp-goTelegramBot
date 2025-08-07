@@ -693,7 +693,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	fileData, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, audioName)
 	if err != nil {
 		log.Printf("Помилка завантаження аудіо в Telegram: %v", err)
-		logErr := fmt.Sprintf("Помилка завантаження аудіа в Telegram: %v", err)
+		logErr := fmt.Sprintf("Помилка завантаження аудіо в Telegram: %v", err)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 			ID:      sentMsgId,
 			Message: logErr,
