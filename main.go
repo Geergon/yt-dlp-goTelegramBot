@@ -281,6 +281,11 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
+	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
+		log.Printf("URL %s містить параметр list, пропускаємо", url)
+		return nil
+	}
+
 	urlQueue <- tgbot.URLRequest{
 		URL:      url,
 		Platform: platform,

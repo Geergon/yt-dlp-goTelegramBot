@@ -10,6 +10,6 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       CHAT_ID: ${CHAT_ID}
     volumes:
-      - ./config:/config
-      - ./db:/db
-      - ./cookies:/cookies
+      - ./config:/config:z
+      - ./db:/db:z
+      - ./cookies:/cookies:z

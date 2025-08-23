@@ -34,7 +34,17 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	viperMutex.RUnlock()
 
 	cookies := "./cookies/cookiesYT.txt"
-	useCookies := true
+	var useCookies bool
+	if _, err := os.Stat(cookies); os.IsNotExist(err) {
+		useCookies = false
+	} else {
+		useCookies = true
+	}
+
+	matchFilter := "!playlist"
+	if !longVideoDownload {
+		matchFilter = fmt.Sprintf("%s & duration<%s", matchFilter, duration)
+	}
 
 	matchFilter := "!playlist"
 	if !longVideoDownload {
