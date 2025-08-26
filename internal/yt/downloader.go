@@ -46,11 +46,6 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 		matchFilter = fmt.Sprintf("%s & duration<%s", matchFilter, duration)
 	}
 
-	matchFilter := "!playlist"
-	if !longVideoDownload {
-		matchFilter = fmt.Sprintf("%s & duration<%s", matchFilter, duration)
-	}
-
 	args := []string{
 		"--break-on-reject",
 		"--match-filter", matchFilter,
