@@ -303,6 +303,7 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 
 	args := []string{
 		"--extract-audio",
+		"--embed-thumbnail",
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
 		"-o", "./audio/%(title)s.%(ext)s",
