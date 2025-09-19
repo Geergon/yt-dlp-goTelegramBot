@@ -23,6 +23,8 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         images: ${{ vars.DOCKERHUB_USERNAME }}/yt-dlp-gotelegrambot
+        tags: |
+          type=pep440,pattern={{version}}
 
     - name: Login to DockerHub
       if: github.event_name != 'pull_request'
