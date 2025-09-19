@@ -497,7 +497,7 @@ func processAudio(req URLRequest, chatID int64) error {
 
 		if len(audio) == 0 {
 			log.Printf("Не знайдено аудіофайлів після завантаження для URL: %s (спроба %d)", req.URL, attempt)
-			downloadErr = fmt.Errorf("не знайдено аудіофайлів після завантаження")
+			downloadErr = fmt.Errorf("Не знайдено аудіофайлів після завантаження")
 			if attempt < maxAttempts {
 				log.Printf("Чекаємо %v перед наступною спробою...", retryDelay)
 				time.Sleep(retryDelay)
@@ -506,7 +506,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		}
 
 		audioName = audio[0]
-		log.Printf("Аудіо успішно завантажено на спробі %d: %s", attempt, audioName)
+		log.Printf("Аудіо файл успішно завантажено на спробі %d: %s", attempt, audioName)
 		downloadErr = nil
 		break
 	}
