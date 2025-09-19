@@ -14,6 +14,18 @@ This is a small and simple bot for private chats, implemented using MTProto via 
 
 ### Setup Steps
 
+#### Running bot using docker or podman
+```
+docker run -d --env-file /path/to/.env -v /path/to/config:/config:z -v /path/to/db:/db:z -v /path/to/cookies:/cookies:z --name yt-dlp-gotelegrambot --restart unless-stopped geergon/yt-dlp-gotelegrambot:latest
+```
+or 
+```
+podman run -d --env-file /path/to/.env -v /path/to/config:/config:z -v /path/to/db:/db:z -v /path/to/cookies:/cookies:z --name yt-dlp-gotelegrambot --restart unless-stopped geergon/yt-dlp-gotelegrambot:latest
+```
+:z can be omitted if SELinux is not installed on the system.
+
+#### ... via Docker Compose
+
 1. **Create a `compose.yaml` file (or download from the repository)**  in the project root with the following content:
     
 
