@@ -634,6 +634,34 @@ func Url(update *ext.Update) (string, bool, string) {
 	return url, isValid, platform
 }
 
+func UrlFromText(text string) (string, bool, string) {
+	if strings.Contains(text, "/fragment") {
+		return "", false, ""
+	}
+	var url, platform string
+	var isValid bool
+	u := strings.Fields(text)
+
+	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
+		url, isValid, platform = urlYT, true, "YouTube"
+	} else if urlTT, isTT := yt.GetTikTokURL(text); isTT {
+		url, isValid, platform = urlTT, true, "TikTok"
+	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
+		url, isValid, platform = urlInsta, true, "Instagram"
+	} else if len(u) == 2 {
+		valid := yt.IsUrl(u[1])
+		if !valid {
+			return "", false, ""
+		}
+		url, isValid, platform = u[1], true, ""
+	}
+
+	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
+		return "", false, ""
+	}
+	return url, isValid, platform
+}
+
 func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, sentMsgId int, longVideoDownload bool) (bool, string, error) {
 	var downloadFunc func(string, string) (bool, error)
 	timeUnix := time.Now().UnixMilli()
