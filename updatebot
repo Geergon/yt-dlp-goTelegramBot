@@ -1,0 +1,5 @@
+#!/bin/bash
+
+yt-dlp -U
+apk update
+apk upgrade gallery-dl
