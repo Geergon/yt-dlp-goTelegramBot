@@ -375,8 +375,9 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 			log.Println("ReplyToMessage не містить тексту")
 			return err
 		}
-		platform = "YouTube"
-		url, isValid = yt.GetYoutubeURL(replyText)
+		url, isValid, platform = tgbot.UrlFromText(replyText)
+		// platform = "YouTube"
+		// url, isValid = yt.GetYoutubeURL(replyText)
 	} else {
 		log.Println("Команда не є відповіддю")
 		url, isValid, platform = tgbot.Url(update)

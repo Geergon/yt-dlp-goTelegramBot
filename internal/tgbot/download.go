@@ -612,6 +612,7 @@ func Url(update *ext.Update) (string, bool, string) {
 	}
 	var url, platform string
 	var isValid bool
+	u := strings.Fields(text)
 
 	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
 		url, isValid, platform = urlYT, true, "YouTube"
@@ -619,6 +620,41 @@ func Url(update *ext.Update) (string, bool, string) {
 		url, isValid, platform = urlTT, true, "TikTok"
 	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
 		url, isValid, platform = urlInsta, true, "Instagram"
+	} else if len(u) == 2 {
+		valid := yt.IsUrl(u[1])
+		if !valid {
+			return "", false, ""
+		}
+		url, isValid, platform = u[1], true, ""
+	}
+
+	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
+		return "", false, ""
+	}
+	return url, isValid, platform
+}
+
+func UrlFromText(text string) (string, bool, string) {
+	if strings.Contains(text, "/fragment") {
+		return "", false, ""
+	}
+	var url, platform string
+	var isValid bool
+	u := strings.Fields(text)
+
+	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
+		url, isValid, platform = urlYT, true, "YouTube"
+	} else if urlTT, isTT := yt.GetTikTokURL(text); isTT {
+		url, isValid, platform = urlTT, true, "TikTok"
+	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
+		url, isValid, platform = urlInsta, true, "Instagram"
+	} else {
+		valid := yt.IsUrl(u[0])
+		if !valid {
+			return "", false, ""
+		}
+		trimmedUrl := strings.TrimSpace(u[0])
+		url, isValid, platform = trimmedUrl, true, ""
 	}
 
 	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
@@ -645,6 +681,11 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	case "Instagram":
 		downloadFunc = func(url string, output string) (bool, error) {
 			isPhotos, err := yt.DownloadInstaVideo(url, output)
+			return isPhotos, err
+		}
+	default:
+		downloadFunc = func(url string, output string) (bool, error) {
+			isPhotos, err := yt.DownloadAnyMedia(url, output)
 			return isPhotos, err
 		}
 	}
