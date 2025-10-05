@@ -648,12 +648,13 @@ func UrlFromText(text string) (string, bool, string) {
 		url, isValid, platform = urlTT, true, "TikTok"
 	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
 		url, isValid, platform = urlInsta, true, "Instagram"
-	} else if len(u) == 2 {
-		valid := yt.IsUrl(u[1])
+	} else {
+		valid := yt.IsUrl(u[0])
 		if !valid {
 			return "", false, ""
 		}
-		url, isValid, platform = u[1], true, ""
+		trimmedUrl := strings.TrimSpace(u[0])
+		url, isValid, platform = trimmedUrl, true, ""
 	}
 
 	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
