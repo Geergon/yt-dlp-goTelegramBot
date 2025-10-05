@@ -612,6 +612,7 @@ func Url(update *ext.Update) (string, bool, string) {
 	}
 	var url, platform string
 	var isValid bool
+	u := strings.Fields(text)
 
 	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
 		url, isValid, platform = urlYT, true, "YouTube"
@@ -619,6 +620,12 @@ func Url(update *ext.Update) (string, bool, string) {
 		url, isValid, platform = urlTT, true, "TikTok"
 	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
 		url, isValid, platform = urlInsta, true, "Instagram"
+	} else if len(u) == 2 {
+		valid := yt.IsUrl(u[1])
+		if !valid {
+			return "", false, ""
+		}
+		url, isValid, platform = u[1], true, ""
 	}
 
 	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
