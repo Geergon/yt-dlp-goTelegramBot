@@ -647,6 +647,11 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 			isPhotos, err := yt.DownloadInstaVideo(url, output)
 			return isPhotos, err
 		}
+	default:
+		downloadFunc = func(url string, output string) (bool, error) {
+			isPhotos, err := yt.DownloadAnyMedia(url, output)
+			return isPhotos, err
+		}
 	}
 	const maxAttempts = 3
 	const retryDelay = 10 * time.Second
