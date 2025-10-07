@@ -237,7 +237,7 @@ func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta boo
 		cookies = cookiesINSTA
 	}
 	args := []string{
-		"-f", "mp4",
+		// "-f", "mp4",
 		"--no-playlist",
 		"--output", output,
 	}
