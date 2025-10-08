@@ -92,7 +92,7 @@ func main() {
 
 	chatId := os.Getenv("CHAT_ID")
 	if chatId == "" {
-		log.Fatal("CHAT_ID не задано")
+		log.Printf("CHAT_ID не задано")
 	}
 
 	viperMutex.Unlock()
