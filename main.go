@@ -167,12 +167,12 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\n
-			Команди:\n
-			/logs - отримати логи\n
-			/update - оновити yt-dlp і gallery-dl\n
-			/fragment - завантажити фрагмент відео\n 
-			/download - ручне завантаження відео\n
+			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.
+			Команди:
+			/logs - отримати логи
+			/update - оновити yt-dlp і gallery-dl
+			/fragment - завантажити фрагмент відео 
+			/download - ручне завантаження відео
 			/audio - завантажити аудіо`,
 		})
 		if err != nil {
