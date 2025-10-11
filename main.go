@@ -286,6 +286,12 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
+	}
+
 	urlQueue <- tgbot.URLRequest{
 		URL:      url,
 		Platform: platform,
@@ -319,6 +325,12 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00",
 		})
 		return err
+	}
+
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
 	}
 
 	urlQueue <- tgbot.URLRequest{
