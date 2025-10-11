@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -221,106 +220,14 @@ func GetThumb(url string, platform string) string {
 	return "thumb.jpg"
 }
 
-func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta bool) error {
-	cookiesTT := "./cookies/cookiesTT.txt"
-	cookiesINSTA := "./cookies/cookiesINSTA.txt"
-	// ext := "%(ext)s"
-	// outputFile := fmt.Sprintf("%s.%s", output, ext)
-	var platforma string
-	var cookies string
-	if isTT {
-		platforma = "TikTok"
-		cookies = cookiesTT
-	}
-	if isInsta {
-		platforma = "Instagram"
-		cookies = cookiesINSTA
-	}
-	args := []string{
-		// "-f", "mp4",
-		"--no-playlist",
-		"--output", output,
-	}
-	if useCookies {
-		args = append(args, "--cookies", cookies)
-	}
-	args = append(args, url)
-
-	cmd := exec.Command("yt-dlp", args...)
-	o, err := cmd.CombinedOutput()
+func DownloadAudio(url string, platform string) ([]string, string, error) {
+	dir, err := os.MkdirTemp("", "audio-download-")
 	if err != nil {
-		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platforma, err, string(o))
-		return err
-	}
-	log.Printf("yt-dlp download successful for %s", url)
-	return nil
-}
-
-func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, error) {
-	var platform string
-	var cookies string
-	if isTT {
-		platform = "TikTok"
-		cookies = "./cookies/cookiesTT.txt"
-	}
-	if isInsta {
-		platform = "Instagram"
-		cookies = "./cookies/cookiesINSTA.txt"
+		log.Printf("Помилка створення тимчасового каталогу: %v", err)
+		return nil, "", err
 	}
 
-	for _, ext := range []string{"jpg", "png", "jpeg"} {
-		matches, _ := filepath.Glob(fmt.Sprintf("output-*.%s", ext))
-		for _, match := range matches {
-			if err := os.Remove(match); err != nil {
-				log.Printf("Failed to remove %s: %v", match, err)
-			}
-		}
-		if err := os.Remove(fmt.Sprintf("output.%s", ext)); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove output.%s: %v", ext, err)
-		}
-	}
-
-	args := []string{
-		"-o", "overwrite=true",
-		"--no-part",
-		"-D", "photo",
-		"-f", "output-{num:02d}.{extension}",
-		"-o", "directory=",
-	}
-	if useCookies {
-		args = append(args, "--cookies", cookies)
-	}
-	args = append(args, url)
-
-	cmd := exec.Command("gallery-dl", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-		return false, err
-	}
-	log.Printf("gallery-dl download successful for %s", url)
-	return true, nil
-}
-
-func DownloadAudio(url string, platform string) ([]string, error) {
-	dir := "./audio"
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		err = os.Mkdir(dir, 0o755)
-		if err != nil {
-			log.Printf("Помилка створення папки %s: %v", dir, err)
-			return nil, err
-		}
-	}
-
-	audio := os.DirFS(dir)
-	mp3Files, err := fs.Glob(audio, "*.mp3")
-	if err != nil {
-		fmt.Println("error")
-	}
-	for _, m := range mp3Files {
-		path := path.Join(dir, m)
-		os.Remove(path)
-	}
+	audioDir := os.DirFS(dir)
 
 	var cookies string
 	switch platform {
@@ -337,7 +244,7 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 		"--embed-thumbnail",
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
-		"-o", "./audio/%(title)s.%(ext)s",
+		"-o", path.Join(dir, "%(title)s.%(ext)s"),
 	}
 
 	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
@@ -351,21 +258,20 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platform, err, string(output))
-		return nil, err
+		return nil, "", err
 	}
 	log.Printf("yt-dlp download successful for %s", url)
 
-	if err == nil {
-		var audioName []string
-		for _, audio := range mp3Files {
-			audioName = append(audioName, path.Join(dir, audio))
-		}
-		if len(audioName) == 0 {
-			log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
-			return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
-		}
-		log.Printf("Знайдено аудіофайли: %v", audioName)
-		return audioName, nil
+	newMp3Files, err := fs.Glob(audioDir, "*.mp3")
+	if err != nil {
+		log.Printf("Помилка при повторному отриманні списку файлів: %v", err)
+		return nil, "", err
 	}
-	return nil, err
+	if len(newMp3Files) == 0 {
+		log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
+		return nil, "", fmt.Errorf("не знайдено MP3-файлів після завантаження")
+	}
+
+	log.Printf("Знайдено аудіофайли: %v", newMp3Files)
+	return newMp3Files, dir, nil
 }

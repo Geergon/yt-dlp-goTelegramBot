@@ -232,6 +232,31 @@ func startCleanupRoutine() {
 }
 
 func cleanOldFiles(threshold time.Duration) error {
+	// Remove temp audio dir
+	tempDir := os.TempDir()
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		return err
+	}
+
+	prefix := "audio-download-"
+	lifetime := 10 * time.Minute
+	for _, file := range files {
+		if file.IsDir() && len(file.Name()) >= len(prefix) && file.Name()[:len(prefix)] == prefix {
+
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			if time.Since(info.ModTime()) > lifetime {
+				fullPath := filepath.Join(tempDir, file.Name())
+				os.RemoveAll(fullPath)
+			}
+		}
+	}
+
+	// remove unused files
 	dirs := []string{"video", "photo", "audio"}
 	now := time.Now()
 
@@ -286,6 +311,12 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
+	}
+
 	urlQueue <- tgbot.URLRequest{
 		URL:      url,
 		Platform: platform,
@@ -319,6 +350,12 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00",
 		})
 		return err
+	}
+
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
 	}
 
 	urlQueue <- tgbot.URLRequest{
