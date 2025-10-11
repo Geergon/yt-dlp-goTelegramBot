@@ -273,17 +273,16 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 	}
 	log.Printf("yt-dlp download successful for %s", url)
 
-	if err == nil {
-		var audioName []string
-		for _, audio := range mp3Files {
-			audioName = append(audioName, audio)
-		}
-		if len(audioName) == 0 {
-			log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
-			return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
-		}
-		log.Printf("Знайдено аудіофайли: %v", audioName)
-		return audioName, nil
+	newMp3Files, err := fs.Glob(audioDir, "*.mp3")
+	if err != nil {
+		log.Printf("Помилка при повторному отриманні списку файлів: %v", err)
+		return nil, err
 	}
-	return nil, err
+	if len(newMp3Files) == 0 {
+		log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
+		return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
+	}
+
+	log.Printf("Знайдено аудіофайли: %v", newMp3Files)
+	return newMp3Files, nil
 }

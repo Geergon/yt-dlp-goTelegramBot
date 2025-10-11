@@ -482,6 +482,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	const retryDelay = 5 * time.Second
 
 	var audioName string
+	var audioPath string
 	var downloadErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		audio, err := yt.DownloadAudio(req.URL, req.Platform)
@@ -506,6 +507,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		}
 
 		audioName = audio[0]
+		audioPath = "./audio/" + audioName
 		log.Printf("Аудіо успішно завантажено на спробі %d: %s", attempt, audioName)
 		downloadErr = nil
 		break
@@ -534,7 +536,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		return err
 	}
 
-	fileData, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, audioName)
+	fileData, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, audioPath)
 	if err != nil {
 		log.Printf("Помилка завантаження аудіо в Telegram: %v", err)
 		logErr := fmt.Sprintf("Помилка завантаження аудіо в Telegram: %v", err)
