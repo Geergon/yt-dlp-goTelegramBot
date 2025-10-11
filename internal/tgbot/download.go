@@ -594,7 +594,13 @@ func processAudio(req URLRequest, chatID int64) error {
 	err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні аудіо: %v", err)
-		deleteMedia(req.Context, req.Update, req.URL, chatID, false, audioName, thumbName, true)
+		if err := os.RemoveAll(audioDir); err != nil {
+			log.Printf("Помилка видалення тимчасового каталогу %s: %v", audioDir, err)
+		} else {
+			log.Printf("Тимчасовий каталог %s успішно видалено.", audioDir)
+		}
+
+		deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, true)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 			ID:      sentMsgId,
 			Message: fmt.Sprintf("Помилка надсилання аудіо: %v", err),
@@ -611,7 +617,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	} else {
 		log.Printf("Тимчасовий каталог %s успішно видалено.", audioDir)
 	}
-	deleteMedia(req.Context, req.Update, req.URL, chatID, false, audioName, thumbName, false)
+	deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, false)
 	return nil
 }
 
@@ -946,8 +952,10 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 		}
 	}
 	if !isPhoto {
-		if err := os.Remove(mediaFileName); err != nil {
-			log.Printf("Не вдалося видалити медіа: %v", err)
+		if mediaFileName != "" {
+			if err := os.Remove(mediaFileName); err != nil {
+				log.Printf("Не вдалося видалити медіа: %v", err)
+			}
 		}
 		if thumbName != "" {
 			if err := os.Remove(thumbName); err != nil {
