@@ -232,6 +232,31 @@ func startCleanupRoutine() {
 }
 
 func cleanOldFiles(threshold time.Duration) error {
+	// Remove temp audio dir
+	tempDir := os.TempDir()
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		return err
+	}
+
+	prefix := "audio-download-"
+	lifetime := 10 * time.Minute
+	for _, file := range files {
+		if file.IsDir() && len(file.Name()) >= len(prefix) && file.Name()[:len(prefix)] == prefix {
+
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			if time.Since(info.ModTime()) > lifetime {
+				fullPath := filepath.Join(tempDir, file.Name())
+				os.RemoveAll(fullPath)
+			}
+		}
+	}
+
+	// remove unused files
 	dirs := []string{"video", "photo", "audio"}
 	now := time.Now()
 
