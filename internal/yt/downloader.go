@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -221,87 +220,6 @@ func GetThumb(url string, platform string) string {
 	return "thumb.jpg"
 }
 
-func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta bool) error {
-	cookiesTT := "./cookies/cookiesTT.txt"
-	cookiesINSTA := "./cookies/cookiesINSTA.txt"
-	// ext := "%(ext)s"
-	// outputFile := fmt.Sprintf("%s.%s", output, ext)
-	var platforma string
-	var cookies string
-	if isTT {
-		platforma = "TikTok"
-		cookies = cookiesTT
-	}
-	if isInsta {
-		platforma = "Instagram"
-		cookies = cookiesINSTA
-	}
-	args := []string{
-		// "-f", "mp4",
-		"--no-playlist",
-		"--output", output,
-	}
-	if useCookies {
-		args = append(args, "--cookies", cookies)
-	}
-	args = append(args, url)
-
-	cmd := exec.Command("yt-dlp", args...)
-	o, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platforma, err, string(o))
-		return err
-	}
-	log.Printf("yt-dlp download successful for %s", url)
-	return nil
-}
-
-func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, error) {
-	var platform string
-	var cookies string
-	if isTT {
-		platform = "TikTok"
-		cookies = "./cookies/cookiesTT.txt"
-	}
-	if isInsta {
-		platform = "Instagram"
-		cookies = "./cookies/cookiesINSTA.txt"
-	}
-
-	for _, ext := range []string{"jpg", "png", "jpeg"} {
-		matches, _ := filepath.Glob(fmt.Sprintf("output-*.%s", ext))
-		for _, match := range matches {
-			if err := os.Remove(match); err != nil {
-				log.Printf("Failed to remove %s: %v", match, err)
-			}
-		}
-		if err := os.Remove(fmt.Sprintf("output.%s", ext)); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove output.%s: %v", ext, err)
-		}
-	}
-
-	args := []string{
-		"-o", "overwrite=true",
-		"--no-part",
-		"-D", "photo",
-		"-f", "output-{num:02d}.{extension}",
-		"-o", "directory=",
-	}
-	if useCookies {
-		args = append(args, "--cookies", cookies)
-	}
-	args = append(args, url)
-
-	cmd := exec.Command("gallery-dl", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-		return false, err
-	}
-	log.Printf("gallery-dl download successful for %s", url)
-	return true, nil
-}
-
 func DownloadAudio(url string, platform string) ([]string, error) {
 	dir := "./audio"
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -312,8 +230,8 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 		}
 	}
 
-	audio := os.DirFS(dir)
-	mp3Files, err := fs.Glob(audio, "*.mp3")
+	audioDir := os.DirFS(dir)
+	mp3Files, err := fs.Glob(audioDir, "*.mp3")
 	if err != nil {
 		fmt.Println("error")
 	}
@@ -358,7 +276,7 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 	if err == nil {
 		var audioName []string
 		for _, audio := range mp3Files {
-			audioName = append(audioName, path.Join(dir, audio))
+			audioName = append(audioName, audio)
 		}
 		if len(audioName) == 0 {
 			log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
