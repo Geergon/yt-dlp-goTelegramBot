@@ -220,25 +220,14 @@ func GetThumb(url string, platform string) string {
 	return "thumb.jpg"
 }
 
-func DownloadAudio(url string, platform string) ([]string, error) {
-	dir := "./audio"
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		err = os.Mkdir(dir, 0o755)
-		if err != nil {
-			log.Printf("Помилка створення папки %s: %v", dir, err)
-			return nil, err
-		}
+func DownloadAudio(url string, platform string) ([]string, string, error) {
+	dir, err := os.MkdirTemp("", "audio-download-")
+	if err != nil {
+		log.Printf("Помилка створення тимчасового каталогу: %v", err)
+		return nil, "", err
 	}
 
 	audioDir := os.DirFS(dir)
-	mp3Files, err := fs.Glob(audioDir, "*.mp3")
-	if err != nil {
-		fmt.Println("error")
-	}
-	for _, m := range mp3Files {
-		path := path.Join(dir, m)
-		os.Remove(path)
-	}
 
 	var cookies string
 	switch platform {
@@ -255,7 +244,7 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 		"--embed-thumbnail",
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
-		"-o", "./audio/%(title)s.%(ext)s",
+		"-o", path.Join(dir, "%(title)s.%(ext)s"),
 	}
 
 	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
@@ -269,20 +258,20 @@ func DownloadAudio(url string, platform string) ([]string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platform, err, string(output))
-		return nil, err
+		return nil, "", err
 	}
 	log.Printf("yt-dlp download successful for %s", url)
 
 	newMp3Files, err := fs.Glob(audioDir, "*.mp3")
 	if err != nil {
 		log.Printf("Помилка при повторному отриманні списку файлів: %v", err)
-		return nil, err
+		return nil, "", err
 	}
 	if len(newMp3Files) == 0 {
 		log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
-		return nil, fmt.Errorf("не знайдено MP3-файлів після завантаження")
+		return nil, "", fmt.Errorf("не знайдено MP3-файлів після завантаження")
 	}
 
 	log.Printf("Знайдено аудіофайли: %v", newMp3Files)
-	return newMp3Files, nil
+	return newMp3Files, dir, nil
 }

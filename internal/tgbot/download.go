@@ -482,16 +482,20 @@ func processAudio(req URLRequest, chatID int64) error {
 	const retryDelay = 5 * time.Second
 
 	var audioName string
+	var audioDir string
 	var audioPath string
 	var downloadErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		audio, err := yt.DownloadAudio(req.URL, req.Platform)
+		audio, musicDir, err := yt.DownloadAudio(req.URL, req.Platform)
 		if err != nil {
 			log.Printf("Спроба %d завантаження аудіо (%s) не вдалося: %v", attempt, req.Platform, err)
 			downloadErr = err
 			if attempt < maxAttempts {
 				log.Printf("Чекаємо %v перед наступною спробою...", retryDelay)
 				time.Sleep(retryDelay)
+			}
+			if musicDir != "" {
+				os.RemoveAll(musicDir)
 			}
 			continue
 		}
@@ -507,7 +511,8 @@ func processAudio(req URLRequest, chatID int64) error {
 		}
 
 		audioName = audio[0]
-		audioPath = "./audio/" + audioName
+		audioDir = musicDir
+		audioPath = path.Join(musicDir, audioName)
 		log.Printf("Аудіо успішно завантажено на спробі %d: %s", attempt, audioName)
 		downloadErr = nil
 		break
@@ -601,6 +606,11 @@ func processAudio(req URLRequest, chatID int64) error {
 		return err
 	}
 
+	if err := os.RemoveAll(audioDir); err != nil {
+		log.Printf("Помилка видалення тимчасового каталогу %s: %v", audioDir, err)
+	} else {
+		log.Printf("Тимчасовий каталог %s успішно видалено.", audioDir)
+	}
 	deleteMedia(req.Context, req.Update, req.URL, chatID, false, audioName, thumbName, false)
 	return nil
 }
