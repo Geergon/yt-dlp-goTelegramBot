@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/tgbot"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/fsnotify/fsnotify"
@@ -51,6 +53,7 @@ var (
 	urlQueue       = make(chan tgbot.URLRequest, 100)
 	semaphore      = make(chan struct{}, 2)
 	processingURLs = sync.Map{}
+	whitelistDb    *sql.DB
 )
 
 func main() {
@@ -107,6 +110,12 @@ func main() {
 		}
 	})
 
+	whitelistDb, err = database.InitDB("./db/whitelist.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer whitelistDb.Close()
+
 	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
 	if err != nil {
 		log.Fatalf("Помилка ініціалізації бота: %v", err)
@@ -132,6 +141,12 @@ func main() {
 	dispatcher := client.Dispatcher
 
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, func(ctx *ext.Context, u *ext.Update) error {
+		chatID := tgbot.Access(ctx, u, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
 		url, isValid, platform := tgbot.Url(u)
 
 		if u.EffectiveMessage.EditDate != 0 {
@@ -158,22 +173,42 @@ func main() {
 		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u}
 		return nil
 	}), 1)
+
 	// dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, tgbot.Echo), 1)
-	dispatcher.AddHandler(handlers.NewCommand("logs", tgbot.SendLogs))
-	dispatcher.AddHandler(handlers.NewCommand("update", tgbot.UpdateYtdlp))
+
+	dispatcher.AddHandler(handlers.NewCommand("logs", func(ctx *ext.Context, update *ext.Update) error {
+		isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+		if !isAccessAllowed {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		tgbot.SendLogs(ctx, update)
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("update", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		tgbot.UpdateYtdlp(ctx, update)
+		return nil
+	}))
+
 	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", Download))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.
-			Команди:
-			/logs - отримати логи
-			/update - оновити yt-dlp і gallery-dl
-			/fragment - завантажити фрагмент відео 
-			/download - ручне завантаження відео
-			/audio - завантажити аудіо`,
+			Message: `
+Ласкаво просимо! Надішліть URL з YouTube, TikTok, Instagram для завантаження відео і фото.
+Команди:
+/fragment - завантажити фрагмент відео. Приклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00
+/download - ручне завантаження відео, дозволяє завантажувати довгі відео з ютуба, а також фото і відео з практичного будь-якого сайту, якщо це підтримує yt-dlp і gallery-dl. Приклад: /download https://x.com/AndriySadovyi/status/1974485263251582997
+/audio - завантажити аудіо. Приклад: /audio https://www.youtube.com/watch?v=guDJvZp5Bqk
+`,
 		})
 		if err != nil {
 			log.Printf("Помилка надсилання повідомлення: %v", err)
@@ -181,8 +216,79 @@ func main() {
 		}
 		return nil
 	}))
-	dispatcher.AddHandler(handlers.NewCommand("settings", tgbot.Settings))
-	dispatcher.AddHandler(handlers.NewCallbackQuery(filters.CallbackQuery.Prefix("cb_settings_"), tgbot.SettingsCallback))
+
+	dispatcher.AddHandler(handlers.NewCommand("admin_help", func(ctx *ext.Context, update *ext.Update) error {
+		isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+		if !isAccessAllowed {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		chatID := update.EffectiveChat().GetID()
+
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: `
+Список команд доступних для адмінів.
+Команди:
+/add_to_whitelist - Додати користувача у вайтлист (підтримує декілька аргументів), приклад: /add_to_whitelist id:@username id:@username ... 
+/check_whitelist - Переглянути вайтлист
+/delete_from_whitelist - Видалити одного або декількох користувачів в вайтлиста, приклад: /delete_from_whitelist @username @username ...
+`,
+		})
+		if err != nil {
+			log.Printf("Помилка надсилання повідомлення: %v", err)
+			return err
+		}
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("add_to_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := AddIdToWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("check_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := GetWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("delete_from_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := DeleteFromWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("settings", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
+		tgbot.Settings(ctx, update)
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCallbackQuery(filters.CallbackQuery.Prefix("cb_settings_"), func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
+		tgbot.SettingsCallback(ctx, update)
+		return nil
+	}))
 
 	fmt.Printf("Бот (@%s) стартував...\n", client.Self.Username)
 
@@ -292,7 +398,7 @@ func cleanOldFiles(threshold time.Duration) error {
 }
 
 func Audio(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
@@ -328,7 +434,7 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 }
 
 func Fragment(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
@@ -369,7 +475,7 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 }
 
 func Download(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
@@ -451,5 +557,151 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		Update:   update,
 	}
 	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
+	return nil
+}
+
+func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+	chatID := update.EffectiveChat().GetID()
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	u := strings.Fields(text)
+	if len(u) == 0 {
+		return nil
+	}
+
+	// command := u[0]
+	args := u[1:]
+	var message string
+
+	for _, a := range args {
+		s := strings.Split(a, ":")
+		if len(s) == 2 {
+			id := s[0]
+			username := s[1]
+			if _, err := strconv.Atoi(id); err == nil && strings.HasPrefix(username, "@") {
+				idInt64, err := strconv.ParseInt(id, 10, 64)
+				if err != nil {
+					log.Panicln("Не вдалося перетворити id з типу string на int64")
+					return err
+				}
+				err = database.InsertIntoWhitelist(db, username, idInt64)
+				if err != nil {
+					log.Printf("Не вдалося вставити значення в БД: %v", err)
+					return err
+				}
+				s := fmt.Sprintf("Користувач %s був успішно доданий в вайтлист\n", username)
+				message += s
+			}
+		}
+	}
+	_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+	chatID := update.EffectiveChat().GetID()
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	whitelist, err := database.GetAllWhitelist(db)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	if len(whitelist) == 0 {
+		_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Вайтліст пустий",
+		})
+	}
+
+	var message string
+	for _, w := range whitelist {
+		s := fmt.Sprintf("%s: %d\n", w.Username, w.Id)
+		message += s
+	}
+
+	_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func DeleteFromWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+	chatID := update.EffectiveChat().GetID()
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	u := strings.Fields(text)
+	if len(u) == 0 {
+		return nil
+	}
+
+	// command := u[0]
+	args := u[1:]
+	// username := u[1]
+
+	var message string
+	for _, username := range args {
+		if strings.HasPrefix(username, "@") {
+			err := database.DeleteUser(db, username)
+			if err != nil {
+				return err
+			}
+			s := fmt.Sprintf("Користувач %s був успішно видалений з БД\n", username)
+			message += s
+		}
+	}
+
+	_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
 	return nil
 }

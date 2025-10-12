@@ -76,7 +76,7 @@ func ProcessURL(req URLRequest) error {
 		return err
 	case <-ctx.Done():
 		// Якщо минув таймаут, надсилаємо повідомлення про помилку
-		chatID := Access(req.Context, req.Update)
+		chatID := req.Update.EffectiveChat().GetID()
 		if chatID != 0 {
 			_, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 				Message: fmt.Sprintf("Обробка URL %s (команда: %s) перервана через таймаут (10 хвилин)", req.URL, req.Command),
@@ -91,11 +91,7 @@ func ProcessURL(req URLRequest) error {
 }
 
 func processURLWithContext(req URLRequest) error {
-	chatID := Access(req.Context, req.Update)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
-	}
+	chatID := req.Update.EffectiveChat().GetID()
 
 	switch req.Command {
 	case "auto":

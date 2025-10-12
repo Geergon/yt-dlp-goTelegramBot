@@ -9,11 +9,7 @@ import (
 )
 
 func Settings(ctx *ext.Context, update *ext.Update) error {
-	chatID := Access(ctx, update)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
-	}
+	chatID := update.EffectiveChat().GetID()
 
 	viperMutex.RLock()
 	rows := []tg.KeyboardButtonRow{
@@ -61,11 +57,7 @@ func boolToEmoji(b bool) string {
 }
 
 func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
-	chatID := Access(ctx, u)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
-	}
+	chatID := u.EffectiveChat().GetID()
 
 	callback := u.CallbackQuery
 	data := callback.Data

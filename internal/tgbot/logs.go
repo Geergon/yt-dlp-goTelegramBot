@@ -10,12 +10,7 @@ import (
 )
 
 func SendLogs(ctx *ext.Context, update *ext.Update) error {
-	chatID := Access(ctx, update)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
-	}
-
+	chatID := update.EffectiveChat().GetID()
 	logFile := "bot.log"
 	fileInfo, err := os.Stat(logFile)
 	if err != nil {

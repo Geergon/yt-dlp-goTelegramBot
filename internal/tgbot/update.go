@@ -2,7 +2,6 @@ package tgbot
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
@@ -10,11 +9,7 @@ import (
 )
 
 func UpdateYtdlp(ctx *ext.Context, update *ext.Update) error {
-	chatID := Access(ctx, update)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
-	}
+	chatID := update.EffectiveChat().GetID()
 
 	ytdlp := yt.UpdateYtdlp()
 	gallerydl := yt.UpdateGallerydl()
