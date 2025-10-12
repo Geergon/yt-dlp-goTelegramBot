@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/tgbot"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/fsnotify/fsnotify"
@@ -107,6 +109,12 @@ func main() {
 		}
 	})
 
+	whitelistDb, err := database.InitDB("./db/whitelist.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer whitelistDb.Close()
+
 	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
 	if err != nil {
 		log.Fatalf("Помилка ініціалізації бота: %v", err)
@@ -164,6 +172,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", Download))
+	dispatcher.AddHandler(handlers.NewCommand("add_id_to_whitelist", Download))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -451,5 +460,61 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		Update:   update,
 	}
 	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
+	return nil
+}
+
+func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	user := update.EffectiveUser()
+	isAuthorized := false
+	chatID := update.EffectiveChat().GetID()
+
+	viperMutex.RLock()
+	allowedUsers := viper.GetIntSlice("allowed_user")
+	viperMutex.RUnlock()
+	for _, allowedUserID := range allowedUsers {
+		if int64(allowedUserID) == user.ID {
+			isAuthorized = true
+			break
+		}
+	}
+	if !isAuthorized {
+		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+		return nil
+	}
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	u := strings.Fields(text)
+	if len(u) == 0 {
+		return nil
+	}
+
+	if len(u) == 3 {
+		// command := u[0]
+		// args := u[1:]
+		id := u[1]
+		username := u[2]
+		if _, err := strconv.Atoi(id); err == nil && strings.HasPrefix(username, "@") {
+			idInt64, err := strconv.ParseInt(id, 10, 64)
+			if err != nil {
+				log.Panicln("Не вдалося перетворити id з типу string на int64")
+				return err
+			}
+			err = database.InsertIntoWhitelist(db, username, idInt64)
+			if err != nil {
+				log.Printf("Не вдалося вставити значення в БД: %v", err)
+				return err
+			}
+			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "ID і Username були успішно додані в вайтлист",
+			})
+
+		}
+	}
 	return nil
 }
