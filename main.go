@@ -175,13 +175,46 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: `Ласкаво просимо! Надішліть URL з YouTube, TikTok або Instagram для завантаження відео.\n
-			Команди:\n
-			/logs - отримати логи\n
-			/update - оновити yt-dlp і gallery-dl\n
-			/fragment - завантажити фрагмент відео\n 
-			/download - ручне завантаження відео\n
-			/audio - завантажити аудіо`,
+			Message: `
+Ласкаво просимо! Надішліть URL з YouTube, TikTok, Instagram для завантаження відео і фото.
+Команди:
+/fragment - завантажити фрагмент відео. Приклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00
+/download - ручне завантаження відео, дозволяє завантажувати довгі відео з ютуба, а також фото і відео з практичного будь-якого сайту, якщо це підтримує yt-dlp і gallery-dl. Приклад: /download https://x.com/AndriySadovyi/status/1974485263251582997
+/audio - завантажити аудіо. Приклад: /audio https://www.youtube.com/watch?v=guDJvZp5Bqk
+`,
+		})
+		if err != nil {
+			log.Printf("Помилка надсилання повідомлення: %v", err)
+			return err
+		}
+		return nil
+	}))
+	dispatcher.AddHandler(handlers.NewCommand("admin_help", func(ctx *ext.Context, u *ext.Update) error {
+		user := u.EffectiveUser()
+		chatID := u.EffectiveChat().GetID()
+		isAuthorized := false
+
+		viperMutex.RLock()
+		allowedUsers := viper.GetIntSlice("allowed_user")
+		viperMutex.RUnlock()
+		for _, allowedUserID := range allowedUsers {
+			if int64(allowedUserID) == user.ID {
+				isAuthorized = true
+				break
+			}
+		}
+		if !isAuthorized {
+			log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+			return nil
+		}
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: `
+Список команд доступних для адмінів.
+Команди:
+/add_to_whitelist - Додати користувача у вайтлист (підтримує декілька аргументів), приклад: /add_to_whitelist id:@username id:@username ... 
+/check_whitelist - Переглянути вайтлист
+/delete_from_whitelist - Видалити одного або декількох користувачів в вайтлиста, приклад: /delete_from_whitelist @username @username ...
+`,
 		})
 		if err != nil {
 			log.Printf("Помилка надсилання повідомлення: %v", err)
@@ -517,28 +550,39 @@ func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 		return nil
 	}
 
-	if len(u) == 3 {
-		// command := u[0]
-		// args := u[1:]
-		id := u[1]
-		username := u[2]
-		if _, err := strconv.Atoi(id); err == nil && strings.HasPrefix(username, "@") {
-			idInt64, err := strconv.ParseInt(id, 10, 64)
-			if err != nil {
-				log.Panicln("Не вдалося перетворити id з типу string на int64")
-				return err
-			}
-			err = database.InsertIntoWhitelist(db, username, idInt64)
-			if err != nil {
-				log.Printf("Не вдалося вставити значення в БД: %v", err)
-				return err
-			}
-			_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-				Message: "ID і Username були успішно додані в вайтлист",
-			})
+	// command := u[0]
+	args := u[1:]
+	var message string
 
+	for _, a := range args {
+		s := strings.Split(a, ":")
+		if len(s) == 2 {
+			id := s[0]
+			username := s[1]
+			if _, err := strconv.Atoi(id); err == nil && strings.HasPrefix(username, "@") {
+				idInt64, err := strconv.ParseInt(id, 10, 64)
+				if err != nil {
+					log.Panicln("Не вдалося перетворити id з типу string на int64")
+					return err
+				}
+				err = database.InsertIntoWhitelist(db, username, idInt64)
+				if err != nil {
+					log.Printf("Не вдалося вставити значення в БД: %v", err)
+					return err
+				}
+				s := fmt.Sprintf("Користувач %s був успішно доданий в вайтлист\n", username)
+				message += s
+			}
 		}
 	}
+	_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -573,6 +617,11 @@ func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 		log.Println(err)
 		return err
 	}
+	if len(whitelist) == 0 {
+		_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "Вайтліст пустий",
+		})
+	}
 
 	var message string
 	for _, w := range whitelist {
@@ -583,6 +632,11 @@ func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 	_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: message,
 	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -617,28 +671,29 @@ func DeleteFromWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error
 		return nil
 	}
 
-	if len(u) == 2 {
-		// command := u[0]
-		// args := u[1:]
-		username := u[1]
+	// command := u[0]
+	args := u[1:]
+	// username := u[1]
 
+	var message string
+	for _, username := range args {
 		if strings.HasPrefix(username, "@") {
 			err := database.DeleteUser(db, username)
 			if err != nil {
 				return err
 			}
+			s := fmt.Sprintf("Користувач %s був успішно видалений з БД\n", username)
+			message += s
 		}
-
-		message := fmt.Sprintf("Користувач %s був успішно видалений з БД", username)
-		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: message,
-		})
-		if err != nil {
-			log.Printf("Помилка надсилання повідомлення: %v", err)
-			return err
-		}
-
-		return nil
 	}
+
+	_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		log.Printf("Помилка надсилання повідомлення: %v", err)
+		return err
+	}
+
 	return nil
 }
