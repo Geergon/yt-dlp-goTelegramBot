@@ -5,23 +5,25 @@ import (
 	"fmt"
 )
 
-func GetAllWhitelist(db *sql.DB) ([]int64, []string, error) {
+type Whitelist struct {
+	Id       int64
+	Username string
+}
+
+func GetAllWhitelist(db *sql.DB) ([]Whitelist, error) {
 	rows, err := db.Query("SELECT user_id, username FROM whitelist")
 	if err != nil {
-		return nil, nil, fmt.Errorf("помилка запиту до БД: %w", err)
+		return nil, fmt.Errorf("помилка запиту до БД: %w", err)
 	}
-	var allId []int64
-	var usernames []string
+	var whitelist []Whitelist
 
 	for rows.Next() {
-		var id int64
-		var username string
-		err := rows.Scan(&id, &username)
+		var w Whitelist
+		err := rows.Scan(&w.Id, &w.Username)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		allId = append(allId, id)
-		usernames = append(usernames, username)
+		whitelist = append(whitelist, w)
 	}
-	return allId, usernames, nil
+	return whitelist, nil
 }

@@ -172,7 +172,6 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", Download))
-	dispatcher.AddHandler(handlers.NewCommand("add_id_to_whitelist", Download))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -186,6 +185,30 @@ func main() {
 		})
 		if err != nil {
 			log.Printf("Помилка надсилання повідомлення: %v", err)
+			return err
+		}
+		return nil
+	}))
+	dispatcher.AddHandler(handlers.NewCommand("add_to_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := AddIdToWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}))
+	dispatcher.AddHandler(handlers.NewCommand("check_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := GetWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}))
+	dispatcher.AddHandler(handlers.NewCommand("delete_from_whitelist", func(ctx *ext.Context, u *ext.Update) error {
+		err := DeleteFromWhitelist(ctx, u, whitelistDb)
+		if err != nil {
+			log.Println(err)
 			return err
 		}
 		return nil
@@ -515,6 +538,107 @@ func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 			})
 
 		}
+	}
+	return nil
+}
+
+func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	user := update.EffectiveUser()
+	chatID := update.EffectiveChat().GetID()
+	isAuthorized := false
+
+	viperMutex.RLock()
+	allowedUsers := viper.GetIntSlice("allowed_user")
+	viperMutex.RUnlock()
+	for _, allowedUserID := range allowedUsers {
+		if int64(allowedUserID) == user.ID {
+			isAuthorized = true
+			break
+		}
+	}
+	if !isAuthorized {
+		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+		return nil
+	}
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	whitelist, err := database.GetAllWhitelist(db)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	var message string
+	for _, w := range whitelist {
+		s := fmt.Sprintf("%s: %d\n", w.Username, w.Id)
+		message += s
+	}
+
+	_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+		Message: message,
+	})
+	return nil
+}
+
+func DeleteFromWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
+	user := update.EffectiveUser()
+	chatID := update.EffectiveChat().GetID()
+	isAuthorized := false
+
+	viperMutex.RLock()
+	allowedUsers := viper.GetIntSlice("allowed_user")
+	viperMutex.RUnlock()
+	for _, allowedUserID := range allowedUsers {
+		if int64(allowedUserID) == user.ID {
+			isAuthorized = true
+			break
+		}
+	}
+	if !isAuthorized {
+		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+		return nil
+	}
+
+	msg := update.EffectiveMessage
+	text := msg.Text
+
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	u := strings.Fields(text)
+	if len(u) == 0 {
+		return nil
+	}
+
+	if len(u) == 2 {
+		// command := u[0]
+		// args := u[1:]
+		username := u[1]
+
+		if strings.HasPrefix(username, "@") {
+			err := database.DeleteUser(db, username)
+			if err != nil {
+				return err
+			}
+		}
+
+		message := fmt.Sprintf("Користувач %s був успішно видалений з БД", username)
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: message,
+		})
+		if err != nil {
+			log.Printf("Помилка надсилання повідомлення: %v", err)
+			return err
+		}
+
+		return nil
 	}
 	return nil
 }
