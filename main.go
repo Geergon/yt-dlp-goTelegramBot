@@ -53,6 +53,7 @@ var (
 	urlQueue       = make(chan tgbot.URLRequest, 100)
 	semaphore      = make(chan struct{}, 2)
 	processingURLs = sync.Map{}
+	whitelistDb    *sql.DB
 )
 
 func main() {
@@ -109,7 +110,7 @@ func main() {
 		}
 	})
 
-	whitelistDb, err := database.InitDB("./db/whitelist.db")
+	whitelistDb, err = database.InitDB("./db/whitelist.db")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -357,7 +358,7 @@ func cleanOldFiles(threshold time.Duration) error {
 }
 
 func Audio(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
@@ -393,7 +394,7 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 }
 
 func Fragment(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
@@ -434,7 +435,7 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 }
 
 func Download(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update)
+	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
 		return nil
