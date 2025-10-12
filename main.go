@@ -141,6 +141,12 @@ func main() {
 	dispatcher := client.Dispatcher
 
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, func(ctx *ext.Context, u *ext.Update) error {
+		chatID := tgbot.Access(ctx, u, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
 		url, isValid, platform := tgbot.Url(u)
 
 		if u.EffectiveMessage.EditDate != 0 {
@@ -167,9 +173,29 @@ func main() {
 		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u}
 		return nil
 	}), 1)
+
 	// dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, tgbot.Echo), 1)
-	dispatcher.AddHandler(handlers.NewCommand("logs", tgbot.SendLogs))
-	dispatcher.AddHandler(handlers.NewCommand("update", tgbot.UpdateYtdlp))
+
+	dispatcher.AddHandler(handlers.NewCommand("logs", func(ctx *ext.Context, update *ext.Update) error {
+		isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+		if !isAccessAllowed {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		tgbot.SendLogs(ctx, update)
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("update", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		tgbot.UpdateYtdlp(ctx, update)
+		return nil
+	}))
+
 	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", Download))
@@ -190,24 +216,15 @@ func main() {
 		}
 		return nil
 	}))
-	dispatcher.AddHandler(handlers.NewCommand("admin_help", func(ctx *ext.Context, u *ext.Update) error {
-		user := u.EffectiveUser()
-		chatID := u.EffectiveChat().GetID()
-		isAuthorized := false
 
-		viperMutex.RLock()
-		allowedUsers := viper.GetIntSlice("allowed_user")
-		viperMutex.RUnlock()
-		for _, allowedUserID := range allowedUsers {
-			if int64(allowedUserID) == user.ID {
-				isAuthorized = true
-				break
-			}
-		}
-		if !isAuthorized {
-			log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+	dispatcher.AddHandler(handlers.NewCommand("admin_help", func(ctx *ext.Context, update *ext.Update) error {
+		isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+		if !isAccessAllowed {
+			log.Println("Відмова у доступі")
 			return nil
 		}
+		chatID := update.EffectiveChat().GetID()
+
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 			Message: `
 Список команд доступних для адмінів.
@@ -223,6 +240,7 @@ func main() {
 		}
 		return nil
 	}))
+
 	dispatcher.AddHandler(handlers.NewCommand("add_to_whitelist", func(ctx *ext.Context, u *ext.Update) error {
 		err := AddIdToWhitelist(ctx, u, whitelistDb)
 		if err != nil {
@@ -231,6 +249,7 @@ func main() {
 		}
 		return nil
 	}))
+
 	dispatcher.AddHandler(handlers.NewCommand("check_whitelist", func(ctx *ext.Context, u *ext.Update) error {
 		err := GetWhitelist(ctx, u, whitelistDb)
 		if err != nil {
@@ -239,6 +258,7 @@ func main() {
 		}
 		return nil
 	}))
+
 	dispatcher.AddHandler(handlers.NewCommand("delete_from_whitelist", func(ctx *ext.Context, u *ext.Update) error {
 		err := DeleteFromWhitelist(ctx, u, whitelistDb)
 		if err != nil {
@@ -247,8 +267,28 @@ func main() {
 		}
 		return nil
 	}))
-	dispatcher.AddHandler(handlers.NewCommand("settings", tgbot.Settings))
-	dispatcher.AddHandler(handlers.NewCallbackQuery(filters.CallbackQuery.Prefix("cb_settings_"), tgbot.SettingsCallback))
+
+	dispatcher.AddHandler(handlers.NewCommand("settings", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
+		tgbot.Settings(ctx, update)
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCallbackQuery(filters.CallbackQuery.Prefix("cb_settings_"), func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
+		tgbot.SettingsCallback(ctx, update)
+		return nil
+	}))
 
 	fmt.Printf("Бот (@%s) стартував...\n", client.Self.Username)
 
@@ -521,23 +561,12 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 }
 
 func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
-	user := update.EffectiveUser()
-	isAuthorized := false
-	chatID := update.EffectiveChat().GetID()
-
-	viperMutex.RLock()
-	allowedUsers := viper.GetIntSlice("allowed_user")
-	viperMutex.RUnlock()
-	for _, allowedUserID := range allowedUsers {
-		if int64(allowedUserID) == user.ID {
-			isAuthorized = true
-			break
-		}
-	}
-	if !isAuthorized {
-		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
 		return nil
 	}
+	chatID := update.EffectiveChat().GetID()
 
 	msg := update.EffectiveMessage
 	text := msg.Text
@@ -588,23 +617,12 @@ func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 }
 
 func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
-	user := update.EffectiveUser()
-	chatID := update.EffectiveChat().GetID()
-	isAuthorized := false
-
-	viperMutex.RLock()
-	allowedUsers := viper.GetIntSlice("allowed_user")
-	viperMutex.RUnlock()
-	for _, allowedUserID := range allowedUsers {
-		if int64(allowedUserID) == user.ID {
-			isAuthorized = true
-			break
-		}
-	}
-	if !isAuthorized {
-		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
 		return nil
 	}
+	chatID := update.EffectiveChat().GetID()
 
 	msg := update.EffectiveMessage
 	text := msg.Text
@@ -642,23 +660,12 @@ func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 }
 
 func DeleteFromWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
-	user := update.EffectiveUser()
-	chatID := update.EffectiveChat().GetID()
-	isAuthorized := false
-
-	viperMutex.RLock()
-	allowedUsers := viper.GetIntSlice("allowed_user")
-	viperMutex.RUnlock()
-	for _, allowedUserID := range allowedUsers {
-		if int64(allowedUserID) == user.ID {
-			isAuthorized = true
-			break
-		}
-	}
-	if !isAuthorized {
-		log.Printf("Неавторизований доступ: %s (UserID: %d)", user.Username, user.ID)
+	isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+	if !isAccessAllowed {
+		log.Println("Відмова у доступі")
 		return nil
 	}
+	chatID := update.EffectiveChat().GetID()
 
 	msg := update.EffectiveMessage
 	text := msg.Text
