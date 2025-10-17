@@ -93,6 +93,11 @@ func GetPhotoPathList() ([]string, bool) {
 		fmt.Println("error")
 	}
 
+	pngFiles, err := fs.Glob(photo, "*.png")
+	if err != nil {
+		fmt.Println("error")
+	}
+
 	mp3Files, err := fs.Glob(photo, "*.mp3")
 	if err != nil {
 		fmt.Println("error")
@@ -104,6 +109,9 @@ func GetPhotoPathList() ([]string, bool) {
 
 	var photos []string
 	for _, photo := range jpgFiles {
+		photos = append(photos, path.Join(dir, photo))
+	}
+	for _, photo := range pngFiles {
 		photos = append(photos, path.Join(dir, photo))
 	}
 	log.Println(photos)
