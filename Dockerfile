@@ -25,7 +25,7 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repos
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_musllinux \
   -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
 
-RUN echo "* 4 * * * /updatebot" | crontab -
+RUN echo "0 4 * * * /updatebot" | crontab -
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD [ "/app" ]
