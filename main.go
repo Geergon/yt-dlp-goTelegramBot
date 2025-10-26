@@ -207,7 +207,7 @@ func main() {
 			// Message: "This is your caption",
 			Media: &tg.InputMediaUploadedDocument{
 				File:     f,
-				MimeType: "image/gif",
+				MimeType: "video/mp4",
 				Attributes: []tg.DocumentAttributeClass{
 					&tg.DocumentAttributeAnimated{},
 				},
