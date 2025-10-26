@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/glebarez/sqlite"
+	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -140,6 +142,85 @@ func main() {
 	go StartWorkers(client, 2)
 	dispatcher := client.Dispatcher
 
+	dispatcher.AddHandler(handlers.NewCommand("gif", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := tgbot.Access(ctx, update, whitelistDb)
+		if chatID == 0 {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+		msg := update.EffectiveMessage
+		text := msg.Text
+
+		dir, filename, err := tgbot.GetVideo(ctx, update)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+
+		if !strings.HasPrefix(text, "/") {
+			return nil
+		}
+
+		u := strings.Fields(text)
+		if len(u) == 0 {
+			return nil
+		}
+
+		var textBott string
+		var textTop string
+
+		re := regexp.MustCompile(`(\w+)=(?:"([^"]*)"|(\S+))`)
+		matches := re.FindAllStringSubmatch(text, -1)
+
+		for _, match := range matches {
+			if match[1] == "textbott" {
+				if match[2] != "" {
+					textBott = match[2]
+				}
+			}
+			if match[1] == "texttop" {
+				if match[2] != "" {
+					textTop = match[2]
+				}
+			}
+			// fmt.Printf("\nСпівпадіння %d:\n", i+1)
+			// fmt.Printf("  [0] Повне: '%s'\n", match[0])
+			// fmt.Printf("  [1] Ключ:  '%s'\n", match[1])
+			// fmt.Printf("  [2] Значення в лапках: '%s'\n", match[2])
+			// fmt.Printf("  [3] Значення без лапок: '%s'\n", match[3])
+		}
+
+		gifFilename, err := tgbot.MakeGif(dir, filename, textBott, textTop)
+		if err != nil {
+			log.Println("не вдалося створити гіфку: ", err)
+			return err
+		}
+
+		gifPath := filepath.Join(dir, gifFilename)
+
+		f, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, gifPath)
+		if err != nil {
+			panic(err)
+		}
+
+		_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
+			// Message: "This is your caption",
+			Media: &tg.InputMediaUploadedDocument{
+				File:     f,
+				MimeType: "image/gif",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeAnimated{},
+				},
+			},
+		})
+		if err != nil {
+			os.RemoveAll(dir)
+			return err
+		}
+		os.RemoveAll(dir)
+		return nil
+	}))
+
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(filters.Message.Text, func(ctx *ext.Context, u *ext.Update) error {
 		chatID := tgbot.Access(ctx, u, whitelistDb)
 		if chatID == 0 {
@@ -232,6 +313,26 @@ func main() {
 /add_to_whitelist - Додати користувача у вайтлист (підтримує декілька аргументів), приклад: /add_to_whitelist id:@username id:@username ... 
 /check_whitelist - Переглянути вайтлист
 /delete_from_whitelist - Видалити одного або декількох користувачів в вайтлиста, приклад: /delete_from_whitelist @username @username ...
+`,
+		})
+		if err != nil {
+			log.Printf("Помилка надсилання повідомлення: %v", err)
+			return err
+		}
+		return nil
+	}))
+
+	dispatcher.AddHandler(handlers.NewCommand("help", func(ctx *ext.Context, update *ext.Update) error {
+		chatID := update.EffectiveChat().GetID()
+
+		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: `
+Ласкаво просимо! Надішліть URL з YouTube, TikTok, Instagram для завантаження відео і фото.
+Команди:
+/fragment - завантажити фрагмент відео. Приклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00
+/download - ручне завантаження відео, дозволяє завантажувати довгі відео з ютуба, а також фото і відео з практичного будь-якого сайту, якщо це підтримує yt-dlp і gallery-dl. Приклад: /download https://x.com/AndriySadovyi/status/1974485263251582997
+/audio - завантажити аудіо. Приклад: /audio https://www.youtube.com/watch?v=guDJvZp5Bqk
+/gif Зробити gif з відео, можна додати текст до гіфки (текст обов'язково має бути в лапках): /gif textbott="текст" texttop="text"
 `,
 		})
 		if err != nil {
