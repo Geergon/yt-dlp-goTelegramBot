@@ -4,3 +4,4 @@ db/session
 bot.log
 photo/
 db
+db/session
