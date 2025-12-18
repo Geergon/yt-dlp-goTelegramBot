@@ -370,6 +370,12 @@ func main() {
 	}))
 
 	dispatcher.AddHandler(handlers.NewCommand("settings", func(ctx *ext.Context, update *ext.Update) error {
+		isAccessAllowed := tgbot.AdminAccess(ctx, update, whitelistDb)
+		if !isAccessAllowed {
+			log.Println("Відмова у доступі")
+			return nil
+		}
+
 		chatID := tgbot.Access(ctx, update, whitelistDb)
 		if chatID == 0 {
 			log.Println("Відмова у доступі")
