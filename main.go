@@ -240,6 +240,9 @@ func main() {
 
 		if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
 			log.Printf("URL %s містить параметр list, пропускаємо", url)
+			ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
+			})
 			return nil
 		}
 
@@ -521,6 +524,9 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 
 	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
 		log.Printf("URL %s містить параметр list, пропускаємо", url)
+		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
+		})
 		return nil
 	}
 
@@ -647,6 +653,9 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 
 	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
 		log.Printf("URL %s містить параметр list, пропускаємо", url)
+		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
+		})
 		return nil
 	}
 
