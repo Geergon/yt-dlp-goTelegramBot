@@ -711,8 +711,17 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		isPhoto, downloadErr = downloadFunc(url, mediaFileName)
 		if downloadErr == nil || isPhoto {
+			if !isPhoto && platform == "TikTok" && !yt.HasAudioTrack(mediaFileName) {
+				log.Printf("Спроба %d: файл без аудіо треку, повторюємо...", attempt)
+				os.Remove(mediaFileName)
+				if attempt < maxAttempts {
+					time.Sleep(retryDelay)
+				}
+				continue
+			}
 			break
 		}
+
 		log.Printf("Спроба %d завантаження (%s) не вдалося: %v", attempt, platform, downloadErr)
 
 		videoName := "output.mp4"

@@ -3,6 +3,7 @@ package yt
 import (
 	"log"
 	"os/exec"
+	"strings"
 )
 
 func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta bool) error {
@@ -37,5 +38,27 @@ func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta boo
 		return err
 	}
 	log.Printf("yt-dlp download successful for %s", url)
+
 	return nil
+}
+
+func HasAudioTrack(filePath string) bool {
+	log.Println("Перевірка наявності звуку в відео...")
+
+	cmd := exec.Command("ffprobe",
+		"-v", "quiet",
+		"-select_streams", "a",
+		"-show_entries", "stream=codec_type",
+		"-of", "csv=p=0",
+		filePath,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	if strings.TrimSpace(string(out)) == "audio" {
+		log.Println("Відео має звук")
+	}
+	return strings.TrimSpace(string(out)) == "audio"
 }
