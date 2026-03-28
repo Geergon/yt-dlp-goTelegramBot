@@ -5,3 +5,4 @@ bot.log
 photo/
 db
 db/session
+cache
