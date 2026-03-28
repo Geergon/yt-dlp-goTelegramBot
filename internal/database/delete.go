@@ -13,3 +13,8 @@ func DeleteUser(db *sql.DB, username string) error {
 	}
 	return nil
 }
+
+func DeleteCachedFile(db *sql.DB, url string) error {
+	_, err := db.Exec("DELETE FROM cache WHERE url = ?", url)
+	return err
+}

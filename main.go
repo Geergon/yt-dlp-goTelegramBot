@@ -116,6 +116,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := database.InitCacheTable(whitelistDb); err != nil {
+		log.Fatal(err)
+	}
 	defer whitelistDb.Close()
 
 	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
@@ -414,7 +417,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 				log.Printf("Черга URL: %v", urlQueue)
 				semaphore <- struct{}{}
 				log.Printf("Воркер %d обробляє URL: %s (команда: %s)", workerID, req.URL, req.Command)
-				err := tgbot.ProcessURL(req)
+				err := tgbot.ProcessURL(whitelistDb, req)
 				if err != nil {
 					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
 					processingURLs.Delete(req.URL)

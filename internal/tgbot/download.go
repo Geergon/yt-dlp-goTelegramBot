@@ -2,17 +2,22 @@ package tgbot
 
 import (
 	"context"
+	"crypto/md5"
+	"database/sql"
 	"fmt"
 	"image/jpeg"
+	"io"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -40,11 +45,15 @@ func init() {
 	}
 	err = os.MkdirAll("photo", 0755)
 	if err != nil {
-		log.Fatalf("Помилка створення папки video: %v", err)
+		log.Fatalf("Помилка створення папки photo: %v", err)
 	}
 	err = os.MkdirAll("audio", 0755)
 	if err != nil {
-		log.Fatalf("Помилка створення папки video: %v", err)
+		log.Fatalf("Помилка створення папки audio: %v", err)
+	}
+	err = os.MkdirAll("cache", 0755)
+	if err != nil {
+		log.Fatalf("Помилка створення папки cache: %v", err)
 	}
 
 	botToken := os.Getenv("BOT_TOKEN")
@@ -59,7 +68,43 @@ func init() {
 	bot.Debug = false
 }
 
-func ProcessURL(req URLRequest) error {
+func saveToCache(db *sql.DB, url, mediaFileName string) {
+	cacheDir := "./cache"
+
+	ext := filepath.Ext(mediaFileName)
+	// Ім'я файлу — хеш URL, щоб уникнути колізій
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(url)))
+	cachedPath := filepath.Join(cacheDir, hash+ext)
+
+	if err := copyFile(mediaFileName, cachedPath); err != nil {
+		log.Printf("Помилка копіювання в кеш: %v", err)
+		return
+	}
+
+	if err := database.SetCachedFile(db, url, cachedPath); err != nil {
+		log.Printf("Помилка збереження в БД кешу: %v", err)
+	}
+	log.Printf("Збережено в кеш: %s -> %s", url, cachedPath)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func ProcessURL(whitelistDb *sql.DB, req URLRequest) error {
 	// Створюємо контекст із таймаутом у 10 хвилин
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
@@ -69,7 +114,7 @@ func ProcessURL(req URLRequest) error {
 	errChan := make(chan error, 1)
 	go func() {
 		log.Printf("Починаємо обробку URL %s (команда: %s)", req.URL, req.Command)
-		errChan <- processURLWithContext(req)
+		errChan <- processURLWithContext(whitelistDb, req)
 	}()
 
 	select {
@@ -91,14 +136,14 @@ func ProcessURL(req URLRequest) error {
 	}
 }
 
-func processURLWithContext(req URLRequest) error {
+func processURLWithContext(whitelistDb *sql.DB, req URLRequest) error {
 	chatID := req.Update.EffectiveChat().GetID()
 
 	switch req.Command {
 	case "auto":
-		return processAutoDownload(req, chatID)
+		return processAutoDownload(whitelistDb, req, chatID)
 	case "download":
-		return processDownload(req, chatID)
+		return processDownload(whitelistDb, req, chatID)
 	case "audio":
 		return processAudio(req, chatID)
 	case "fragment":
@@ -109,7 +154,7 @@ func processURLWithContext(req URLRequest) error {
 	}
 }
 
-func processAutoDownload(req URLRequest, chatID int64) error {
+func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 	viperMutex.RLock()
 	autoDownload := viper.GetBool("auto_download")
 	longVideoDownload := viper.GetBool("long_video_download")
@@ -149,6 +194,20 @@ func processAutoDownload(req URLRequest, chatID int64) error {
 		return err
 	}
 	sentMsgId := sentMsg.GetID()
+
+	if cachedFile, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+		if _, err := os.Stat(cachedFile); err == nil {
+			log.Printf("Знайдено в кеші: %s", cachedFile)
+			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cachedFile, req.Spoiler)
+			if err == nil {
+				deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, false)
+				return sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+			}
+		} else {
+			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cachedFile)
+			database.DeleteCachedFile(whitelistDb, req.URL)
+		}
+	}
 
 	isPhoto, mediaFileName, downloadErr := downloadMedia(req.Context, chatID, req.URL, req.Platform, sentMsgId, longVideoDownload)
 	if downloadErr != nil {
@@ -222,11 +281,15 @@ func processAutoDownload(req URLRequest, chatID int64) error {
 		return err
 	}
 
+	if err == nil {
+		saveToCache(whitelistDb, req.URL, mediaFileName)
+	}
+
 	deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, false)
 	return nil
 }
 
-func processDownload(req URLRequest, chatID int64) error {
+func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
 	})
@@ -235,6 +298,20 @@ func processDownload(req URLRequest, chatID int64) error {
 		return err
 	}
 	sentMsgId := sentMsg.GetID()
+
+	if cachedFile, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+		if _, err := os.Stat(cachedFile); err == nil {
+			log.Printf("Знайдено в кеші: %s", cachedFile)
+			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cachedFile, req.Spoiler)
+			if err == nil {
+				deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, false)
+				return sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+			}
+		} else {
+			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cachedFile)
+			database.DeleteCachedFile(whitelistDb, req.URL)
+		}
+	}
 
 	isPhoto, mediaFileName, downloadErr := downloadMedia(req.Context, chatID, req.URL, req.Platform, sentMsgId, true)
 	if downloadErr != nil {
@@ -295,6 +372,10 @@ func processDownload(req URLRequest, chatID int64) error {
 		}
 		deleteMsgTimer(req.Context, chatID, sentMsgId)
 		return err
+	}
+
+	if err == nil {
+		saveToCache(whitelistDb, req.URL, mediaFileName)
 	}
 
 	deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, false)

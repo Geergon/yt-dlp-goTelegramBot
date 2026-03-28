@@ -9,3 +9,11 @@ func InsertIntoWhitelist(db *sql.DB, username string, id int64) error {
 	}
 	return nil
 }
+
+func SetCachedFile(db *sql.DB, url, filepath string) error {
+	_, err := db.Exec(
+		"INSERT OR REPLACE INTO cache (url, filepath) VALUES (?, ?)",
+		url, filepath,
+	)
+	return err
+}

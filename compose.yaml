@@ -13,3 +13,4 @@ services:
       - ./config:/config:z
       - ./db:/db:z
       - ./cookies:/cookies:z
+      - ./cache:/cache:z

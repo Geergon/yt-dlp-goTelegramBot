@@ -21,3 +21,14 @@ func InitDB(path string) (*sql.DB, error) {
 
 	return db, nil
 }
+
+func InitCacheTable(db *sql.DB) error {
+	_, err := db.Exec(`
+        CREATE TABLE IF NOT EXISTS cache (
+            url       TEXT PRIMARY KEY,
+            filepath  TEXT NOT NULL,
+            cached_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `)
+	return err
+}
