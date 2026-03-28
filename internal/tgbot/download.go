@@ -20,6 +20,7 @@ import (
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
+	"github.com/celestix/gotgproto/types"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
@@ -68,20 +69,40 @@ func init() {
 	bot.Debug = false
 }
 
-func saveToCache(db *sql.DB, url, mediaFileName string) {
-	cacheDir := "./cache"
+func extractDocumentFromMessage(msg *types.Message) *tg.Document {
+	if msg == nil {
+		return nil
+	}
+	m, ok := msg.Message.Media.(*tg.MessageMediaDocument)
+	if !ok {
+		return nil
+	}
+	doc, ok := m.Document.(*tg.Document)
+	if !ok {
+		return nil
+	}
+	return doc
+}
 
-	ext := filepath.Ext(mediaFileName)
-	// Ім'я файлу — хеш URL, щоб уникнути колізій
+func saveToCache(db *sql.DB, url string, c database.CachedMedia) {
+	cacheDir := "/cache"
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		log.Printf("Помилка створення папки кешу: %v", err)
+		return
+	}
+
+	ext := filepath.Ext(c.FilePath)
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(url)))
 	cachedPath := filepath.Join(cacheDir, hash+ext)
 
-	if err := copyFile(mediaFileName, cachedPath); err != nil {
+	if err := copyFile(c.FilePath, cachedPath); err != nil {
 		log.Printf("Помилка копіювання в кеш: %v", err)
 		return
 	}
 
-	if err := database.SetCachedFile(db, url, cachedPath); err != nil {
+	c.FilePath = cachedPath
+	if err := database.SetCachedFile(db, url, c); err != nil {
 		log.Printf("Помилка збереження в БД кешу: %v", err)
 	}
 	log.Printf("Збережено в кеш: %s -> %s", url, cachedPath)
@@ -195,16 +216,49 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 	}
 	sentMsgId := sentMsg.GetID()
 
-	if cachedFile, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
-		if _, err := os.Stat(cachedFile); err == nil {
-			log.Printf("Знайдено в кеші: %s", cachedFile)
-			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cachedFile, req.Spoiler)
+	user := req.Update.EffectiveUser()
+	username := "@" + user.Username
+	title := username + " (link)"
+	entities := []tg.MessageEntityClass{
+		&tg.MessageEntityTextURL{
+			Offset: len(username) + 1,
+			Length: 6,
+			URL:    req.URL,
+		},
+	}
+
+	if cached, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+		if cached.DocID != 0 {
+			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
+			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:       sentMsgId,
+				Message:  title,
+				Entities: entities,
+				Media: &tg.InputMediaDocument{
+					Spoiler: req.Spoiler,
+					ID: &tg.InputDocument{
+						ID:            cached.DocID,
+						AccessHash:    cached.AccessHash,
+						FileReference: cached.FileReference,
+					},
+				},
+			})
+			if err == nil {
+				return nil
+			}
+			log.Printf("Document reference протух, надсилаємо файл: %v", err)
+		}
+		// Fallback на файловий кеш...
+		if _, err := os.Stat(cached.FilePath); err == nil {
+			log.Printf("Знайдено в кеші: %s", cached.FilePath)
+			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler)
 			if err == nil {
 				deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, false)
-				return sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				return err
 			}
 		} else {
-			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cachedFile)
+			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
 			database.DeleteCachedFile(whitelistDb, req.URL)
 		}
 	}
@@ -266,7 +320,7 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 		return err
 	}
 
-	err = sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
+	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, true)
@@ -281,8 +335,13 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 		return err
 	}
 
-	if err == nil {
-		saveToCache(whitelistDb, req.URL, mediaFileName)
+	if err == nil && doc != nil && !isPhoto {
+		saveToCache(whitelistDb, req.URL, database.CachedMedia{
+			FilePath:      mediaFileName,
+			DocID:         doc.ID,
+			AccessHash:    doc.AccessHash,
+			FileReference: doc.FileReference,
+		})
 	}
 
 	deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, false)
@@ -299,16 +358,49 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 	}
 	sentMsgId := sentMsg.GetID()
 
-	if cachedFile, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
-		if _, err := os.Stat(cachedFile); err == nil {
-			log.Printf("Знайдено в кеші: %s", cachedFile)
-			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cachedFile, req.Spoiler)
+	user := req.Update.EffectiveUser()
+	username := "@" + user.Username
+	title := username + " (link)"
+	entities := []tg.MessageEntityClass{
+		&tg.MessageEntityTextURL{
+			Offset: len(username) + 1,
+			Length: 6,
+			URL:    req.URL,
+		},
+	}
+
+	if cached, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+		if cached.DocID != 0 {
+			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
+			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:       sentMsgId,
+				Message:  title,
+				Entities: entities,
+				Media: &tg.InputMediaDocument{
+					Spoiler: req.Spoiler,
+					ID: &tg.InputDocument{
+						ID:            cached.DocID,
+						AccessHash:    cached.AccessHash,
+						FileReference: cached.FileReference,
+					},
+				},
+			})
+			if err == nil {
+				return nil
+			}
+			log.Printf("Document reference протух, надсилаємо файл: %v", err)
+		}
+		// Fallback на файловий кеш...
+		if _, err := os.Stat(cached.FilePath); err == nil {
+			log.Printf("Знайдено в кеші: %s", cached.FilePath)
+			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler)
 			if err == nil {
 				deleteMedia(req.Context, req.Update, req.URL, chatID, false, "", thumbName, false)
-				return sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				return err
 			}
 		} else {
-			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cachedFile)
+			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
 			database.DeleteCachedFile(whitelistDb, req.URL)
 		}
 	}
@@ -359,7 +451,7 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	err = sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
+	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, true)
@@ -374,8 +466,13 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	if err == nil {
-		saveToCache(whitelistDb, req.URL, mediaFileName)
+	if err == nil && doc != nil && !isPhoto {
+		saveToCache(whitelistDb, req.URL, database.CachedMedia{
+			FilePath:      mediaFileName,
+			DocID:         doc.ID,
+			AccessHash:    doc.AccessHash,
+			FileReference: doc.FileReference,
+		})
 	}
 
 	deleteMedia(req.Context, req.Update, req.URL, chatID, isPhoto, mediaFileName, thumbName, false)
@@ -669,7 +766,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		return err
 	}
 
-	err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, media, chatID, sentMsgId)
+	_, err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні аудіо: %v", err)
 		if err := os.RemoveAll(audioDir); err != nil {
@@ -953,7 +1050,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 	return images, media, thumbName, nil
 }
 
-func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, isAudio bool, images []string, media tg.InputMediaClass, chatID int64, sentMsgId int) error {
+func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, isAudio bool, images []string, media tg.InputMediaClass, chatID int64, sentMsgId int) (*tg.Document, error) {
 	user := update.EffectiveUser()
 	username := "@" + user.Username
 	title := username + " (link)"
@@ -992,7 +1089,7 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 		_, err = bot.SendMediaGroup(msgConfig)
 		if err != nil {
 			log.Printf("Помилка відправлення медіа-групи через telegram-bot-api: %v", err)
-			return err
+			return nil, err
 		}
 		log.Printf("Альбом з %d зображеннями усіпшно відправлено", len(images))
 	} else if isAudio {
@@ -1003,10 +1100,10 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 		})
 		if err != nil {
 			log.Printf("Помилка редагування повідомлення з аудіо: %v", err)
-			return err
+			return nil, err
 		}
 	} else {
-		_, err := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+		result, err := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 			ID:       sentMsgId,
 			Message:  title,
 			Media:    media,
@@ -1014,10 +1111,12 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 		})
 		if err != nil {
 			log.Printf("Помилка редагування повідомлення з відео: %v", err)
-			return err
+			return nil, err
 		}
+		doc := extractDocumentFromMessage(result)
+		return doc, nil
 	}
-	return nil
+	return nil, nil
 }
 
 func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64, isPhoto bool, mediaFileName string, thumbName string, fail bool) {

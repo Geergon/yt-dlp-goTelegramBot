@@ -28,11 +28,13 @@ func GetAllWhitelist(db *sql.DB) ([]Whitelist, error) {
 	return whitelist, nil
 }
 
-func GetCachedFile(db *sql.DB, url string) (string, bool) {
-	var filepath string
-	err := db.QueryRow("SELECT filepath FROM cache WHERE url = ?", url).Scan(&filepath)
+func GetCachedFile(db *sql.DB, url string) (*CachedMedia, bool) {
+	c := &CachedMedia{}
+	err := db.QueryRow(
+		"SELECT filepath, doc_id, access_hash, file_reference FROM cache WHERE url = ?", url,
+	).Scan(&c.FilePath, &c.DocID, &c.AccessHash, &c.FileReference)
 	if err != nil {
-		return "", false
+		return nil, false
 	}
-	return filepath, true
+	return c, true
 }

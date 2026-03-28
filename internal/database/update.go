@@ -10,10 +10,18 @@ func InsertIntoWhitelist(db *sql.DB, username string, id int64) error {
 	return nil
 }
 
-func SetCachedFile(db *sql.DB, url, filepath string) error {
+type CachedMedia struct {
+	FilePath      string
+	DocID         int64
+	AccessHash    int64
+	FileReference []byte
+}
+
+func SetCachedFile(db *sql.DB, url string, c CachedMedia) error {
 	_, err := db.Exec(
-		"INSERT OR REPLACE INTO cache (url, filepath) VALUES (?, ?)",
-		url, filepath,
+		`INSERT OR REPLACE INTO cache (url, filepath, doc_id, access_hash, file_reference)
+         VALUES (?, ?, ?, ?, ?)`,
+		url, c.FilePath, c.DocID, c.AccessHash, c.FileReference,
 	)
 	return err
 }
