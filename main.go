@@ -254,7 +254,7 @@ func main() {
 		}
 
 		// Додаємо URL до черги
-		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u}
+		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: u, Spoiler: false}
 		return nil
 	}), 1)
 
@@ -283,6 +283,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("fragment", Fragment))
 	dispatcher.AddHandler(handlers.NewCommand("audio", Audio))
 	dispatcher.AddHandler(handlers.NewCommand("download", Download))
+	dispatcher.AddHandler(handlers.NewCommand("spoiler", Spoiler))
 	dispatcher.AddHandler(handlers.NewCommand("start", func(ctx *ext.Context, u *ext.Update) error {
 		chatID := u.EffectiveChat().GetID()
 		_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -542,6 +543,7 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 		Command:  "audio",
 		Context:  ctx,
 		Update:   update,
+		Spoiler:  false,
 	}
 	return nil
 }
@@ -583,6 +585,7 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 		Fragment: fragment,
 		Context:  ctx,
 		Update:   update,
+		Spoiler:  false,
 	}
 	return nil
 }
@@ -671,6 +674,97 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		Command:  "download",
 		Context:  ctx,
 		Update:   update,
+		Spoiler:  false,
+	}
+	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
+	return nil
+}
+
+func Spoiler(ctx *ext.Context, update *ext.Update) error {
+	chatID := tgbot.Access(ctx, update, whitelistDb)
+	if chatID == 0 {
+		log.Println("Відмова у доступі")
+		return nil
+	}
+
+	var url, platform string
+	var isValid bool
+
+	if update.EffectiveMessage.ReplyTo != nil {
+
+		log.Println("Команда є відповіддю")
+		replyToMsgID := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader).ReplyToMsgID
+		log.Printf("ReplyToMsgID: %d", replyToMsgID)
+
+		config := tgbotapi.NewUpdate(0)
+		config.Timeout = 60
+		config.Limit = 1
+		config.Offset = -1
+		msgUpdates, err := bot.GetUpdates(config)
+		if err != nil {
+			log.Printf("Помилка отримання оновлень: %v", err)
+			return err
+		}
+		if len(msgUpdates) == 0 {
+			log.Println("Жодного оновлення не отримано")
+			return err
+		}
+		tgMsg := msgUpdates[0].Message
+		if tgMsg == nil || tgMsg.ReplyToMessage == nil {
+			log.Printf("Повідомлення з ID %d не містить ReplyToMessage", update.EffectiveMessage.ID)
+			return err
+		}
+		if tgMsg.ReplyToMessage.MessageID != replyToMsgID {
+			log.Printf("ReplyToMsgID не співпадає: очікувалося %d, отримано %d", replyToMsgID, tgMsg.ReplyToMessage.MessageID)
+			return err
+		}
+		replyText := tgMsg.ReplyToMessage.Text
+		log.Printf("ReplyToMessage text: %s", replyText)
+		if replyText == "" {
+			log.Println("ReplyToMessage не містить тексту")
+			return err
+		}
+		url, isValid, platform = tgbot.UrlFromText(replyText)
+		// platform = "YouTube"
+		// url, isValid = yt.GetYoutubeURL(replyText)
+	} else {
+		log.Println("Команда не є відповіддю")
+		url, isValid, platform = tgbot.Url(update)
+		if !isValid {
+			log.Println("Невалідне URL або платформа не підтримується")
+			_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+				Message: "Некоректний URL або платформа не підтримується",
+			})
+			return err
+		}
+	}
+
+	if !yt.IsUrl(url) {
+		log.Println("Повідомлення не містить url")
+		return nil
+	}
+
+	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
+		log.Printf("URL %s містить параметр list, пропускаємо", url)
+		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
+			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
+		})
+		return nil
+	}
+
+	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+	if loaded {
+		log.Printf("URL %s уже обробляється, пропускаємо", url)
+		return nil
+	}
+
+	urlQueue <- tgbot.URLRequest{
+		URL:      url,
+		Platform: platform,
+		Command:  "download",
+		Context:  ctx,
+		Update:   update,
+		Spoiler:  true,
 	}
 	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
 	return nil

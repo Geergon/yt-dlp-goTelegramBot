@@ -28,6 +28,7 @@ type URLRequest struct {
 	Fragment string
 	Context  *ext.Context
 	Update   *ext.Update
+	Spoiler  bool
 }
 
 var bot *tgbotapi.BotAPI
@@ -174,7 +175,7 @@ func processAutoDownload(req URLRequest, chatID int64) error {
 		return err
 	}
 
-	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName)
+	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler)
 	if errCheck != nil {
 		log.Printf("Помилка при обробці медіа: %v", errCheck)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -258,7 +259,7 @@ func processDownload(req URLRequest, chatID int64) error {
 		return err
 	}
 
-	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName)
+	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler)
 	if errCheck != nil {
 		log.Printf("Помилка при обробці медіа: %v", errCheck)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -751,7 +752,7 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	return isPhoto, mediaFileName, nil
 }
 
-func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platform string, isPhoto bool, mediaFileName string) ([]string, tg.InputMediaClass, string, error) {
+func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platform string, isPhoto bool, mediaFileName string, spoiler bool) ([]string, tg.InputMediaClass, string, error) {
 	var thumbName string
 	var media tg.InputMediaClass
 	var isExist bool
@@ -797,17 +798,33 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			return nil, nil, "", err
 		}
 
-		media = &tg.InputMediaUploadedDocument{
-			File:     fileData,
-			MimeType: "video/mp4",
-			Attributes: []tg.DocumentAttributeClass{
-				&tg.DocumentAttributeVideo{
-					SupportsStreaming: true,
+		if spoiler {
+			media = &tg.InputMediaUploadedDocument{
+				File:     fileData,
+				MimeType: "video/mp4",
+				Spoiler:  true,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: mediaFileName,
+					},
 				},
-				&tg.DocumentAttributeFilename{
-					FileName: mediaFileName,
+			}
+		} else {
+			media = &tg.InputMediaUploadedDocument{
+				File:     fileData,
+				MimeType: "video/mp4",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: mediaFileName,
+					},
 				},
-			},
+			}
 		}
 
 		if thumbName = yt.GetThumb(url, platform); thumbName != "" {
