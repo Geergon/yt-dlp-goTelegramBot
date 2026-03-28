@@ -26,6 +26,9 @@ func runYtdlp(useCookies bool, url string, output string, isTT bool, isInsta boo
 		"--no-playlist",
 		"--output", output,
 	}
+	if platforma == "TikTok" {
+		args = append(args, "-S", "vcodec:avc")
+	}
 	if useCookies {
 		args = append(args, "--cookies", cookies)
 	}
