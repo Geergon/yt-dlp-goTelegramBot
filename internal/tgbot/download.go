@@ -197,14 +197,16 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	info, err := yt.GetVideoInfo(req.URL, req.Platform)
-	if err == nil && info.Duration >= int(durationInt) && !longVideoDownload {
-		log.Printf("Відео занадто довге: %d секунд", info.Duration)
-		return nil
-	}
-	if err == nil && info.IsLive || err == nil && info.WasLive {
-		log.Println("Відео це стрім")
-		return nil
+	if req.Platform == "YouTube" {
+		info, err := yt.GetVideoInfo(req.URL, req.Platform)
+		if err == nil && info.Duration >= int(durationInt) && !longVideoDownload {
+			log.Printf("Відео занадто довге: %d секунд", info.Duration)
+			return nil
+		}
+		if err == nil && (info.IsLive || info.WasLive) {
+			log.Println("Відео це стрім")
+			return nil
+		}
 	}
 
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
