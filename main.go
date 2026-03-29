@@ -71,6 +71,8 @@ func main() {
 	viper.SetDefault("duration", "600")
 	viper.SetDefault("long_video_download", false)
 	viper.SetDefault("live_filter", "!is_live & !was_live")
+	viper.SetDefault("cache_max_age_days", 30)
+	viper.SetDefault("cache_max_size_gb", 10)
 	viper.SafeWriteConfig()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -120,6 +122,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer whitelistDb.Close()
+
+	go startCacheCleanup(whitelistDb)
 
 	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
 	if err != nil {
@@ -449,6 +453,82 @@ func startCleanupRoutine() {
 			log.Println("Воркери зайняті або є завдання в черзі, пропускаємо очищення")
 		}
 	}
+}
+
+func startCacheCleanup(db *sql.DB) {
+	ticker := time.NewTicker(24 * time.Hour)
+	go func() {
+		cleanCache(db) // одразу при старті
+		for range ticker.C {
+			cleanCache(db)
+		}
+	}()
+}
+
+func cleanCache(db *sql.DB) {
+	viperMutex.RLock()
+	maxAgeDays := viper.GetInt("cache_max_age_days")
+	maxSizeGB := viper.GetFloat64("cache_max_size_gb")
+	viperMutex.RUnlock()
+
+	cacheDir := "./cache"
+
+	if maxAgeDays > 0 {
+		cutoff := time.Now().AddDate(0, 0, -maxAgeDays)
+		rows, err := db.Query("SELECT url, filepath FROM cache WHERE cached_at < ?", cutoff)
+		if err != nil {
+			log.Printf("Помилка запиту старих записів кешу: %v", err)
+		} else {
+			defer rows.Close()
+			for rows.Next() {
+				var url, filepath string
+				if err := rows.Scan(&url, &filepath); err != nil {
+					continue
+				}
+				if err := os.Remove(filepath); err != nil && !os.IsNotExist(err) {
+					log.Printf("Помилка видалення файлу кешу %s: %v", filepath, err)
+					continue
+				}
+				database.DeleteCachedFile(db, url)
+				log.Printf("Видалено старий кеш: %s", filepath)
+			}
+		}
+	}
+
+	if maxSizeGB > 0 {
+		maxBytes := int64(maxSizeGB * 1024 * 1024 * 1024)
+		for {
+			size, err := dirSize(cacheDir)
+			if err != nil || size <= maxBytes {
+				break
+			}
+			var url, filepath string
+			err = db.QueryRow("SELECT url, filepath FROM cache ORDER BY cached_at ASC LIMIT 1").Scan(&url, &filepath)
+			if err != nil {
+				break
+			}
+			if err := os.Remove(filepath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Помилка видалення файлу кешу %s: %v", filepath, err)
+				break
+			}
+			database.DeleteCachedFile(db, url)
+			log.Printf("Кеш переповнений, видалено: %s", filepath)
+		}
+	}
+}
+
+func dirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
 }
 
 func cleanOldFiles(threshold time.Duration) error {
