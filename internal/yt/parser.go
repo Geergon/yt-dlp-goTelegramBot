@@ -17,6 +17,20 @@ func IsUrl(str string) bool {
 	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
+func RemoveYouTubeListParam(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	q := u.Query()
+	q.Del("list")
+	q.Del("index")
+	u.RawQuery = q.Encode()
+
+	return u.String()
+}
+
 func GetYoutubeURL(text string) (string, bool) {
 	ytUrlRegexp := regexp.MustCompile(`((?:https?:)?\/\/)?((?:www|m)\.)?((?:youtube\.com|music\.youtube\.com|youtu.be))(\/(?:watch\?v=|embed\/|v\/|playlist\?list=|album\/|channel\/)?)?([\w\-]+)([\S]*)?`)
 	url := ytUrlRegexp.FindString(text)

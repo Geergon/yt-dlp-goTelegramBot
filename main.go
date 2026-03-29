@@ -249,12 +249,9 @@ func main() {
 			return nil
 		}
 
-		if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
-			log.Printf("URL %s містить параметр list, пропускаємо", url)
-			ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-				Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
-			})
-			return nil
+		if strings.Contains(url, "list=") {
+			url = yt.RemoveYouTubeListParam(url)
+			log.Printf("Видалено параметр list, новий URL: %s", url)
 		}
 
 		// Перевіряємо, чи URL уже обробляється
@@ -611,12 +608,9 @@ func Audio(ctx *ext.Context, update *ext.Update) error {
 		return err
 	}
 
-	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
-		log.Printf("URL %s містить параметр list, пропускаємо", url)
-		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
-		})
-		return nil
+	if strings.Contains(url, "list=") {
+		url = yt.RemoveYouTubeListParam(url)
+		log.Printf("Видалено параметр list, новий URL: %s", url)
 	}
 
 	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
@@ -659,6 +653,11 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 			Message: "Використання: /fragment <YouTube_URL> <00:00-00:00>\nПриклад: /fragment https://www.youtube.com/watch?v=XYZ 05:00-07:00",
 		})
 		return err
+	}
+
+	if strings.Contains(url, "list=") {
+		url = yt.RemoveYouTubeListParam(url)
+		log.Printf("Видалено параметр list, новий URL: %s", url)
 	}
 
 	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
@@ -742,12 +741,9 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
-		log.Printf("URL %s містить параметр list, пропускаємо", url)
-		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
-		})
-		return nil
+	if strings.Contains(url, "list=") {
+		url = yt.RemoveYouTubeListParam(url)
+		log.Printf("Видалено параметр list, новий URL: %s", url)
 	}
 
 	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
@@ -832,12 +828,9 @@ func Spoiler(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	if strings.Contains(url, "&list=") || strings.Contains(url, "?list=") {
-		log.Printf("URL %s містить параметр list, пропускаємо", url)
-		ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-			Message: "URL містить параметр list, пропускаємо. Киньте посилання без list (На ютубі нажати кнопку 'Поділитись' -> потім кнопку 'копіювати'",
-		})
-		return nil
+	if strings.Contains(url, "list=") {
+		url = yt.RemoveYouTubeListParam(url)
+		log.Printf("Видалено параметр list, новий URL: %s", url)
 	}
 
 	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
