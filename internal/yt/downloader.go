@@ -171,7 +171,7 @@ func DownloadAnyMedia(url string, output string) (bool, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
 	var isSuccess bool
-	isSuccess, galleryErr = runGalleryDl(false, url, true, false)
+	isSuccess, galleryErr = runGalleryDl(false, url, false, false)
 	if galleryErr != nil {
 		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}

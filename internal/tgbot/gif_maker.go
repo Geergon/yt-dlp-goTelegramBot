@@ -68,21 +68,21 @@ func GetVideo(ctx *ext.Context, update *ext.Update) (string, string, error) {
 	if msg.Media == nil {
 		os.RemoveAll(dir)
 		log.Println("повідомлення не містить медіа")
-		return "", "", err
+		return "", "", fmt.Errorf("повідомлення не містить медіа")
 	}
 
 	mediaDoc, ok := msg.Media.(*tg.MessageMediaDocument)
 	if !ok {
 		os.RemoveAll(dir)
 		log.Println("медіа не є документом")
-		return "", "", err
+		return "", "", fmt.Errorf("медіа не є документом")
 	}
 
 	doc, ok := mediaDoc.Document.(*tg.Document)
 	if !ok {
 		os.RemoveAll(dir)
 		log.Println("не вдалося отримати документ")
-		return "", "", err
+		return "", "", fmt.Errorf("не вдалося отримати документ")
 	}
 
 	isVideo := false
@@ -101,7 +101,7 @@ func GetVideo(ctx *ext.Context, update *ext.Update) (string, string, error) {
 	if !isVideo {
 		os.RemoveAll(dir)
 		log.Println("документ не є відео")
-		return "", "", err
+		return "", "", fmt.Errorf("документ не є відео")
 	}
 
 	if filename == "" {

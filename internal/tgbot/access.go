@@ -61,6 +61,7 @@ func Access(ctx *ext.Context, update *ext.Update, whitelistDb *sql.DB) int64 {
 func AdminAccess(ctx *ext.Context, update *ext.Update, whitelistDb *sql.DB) bool {
 	isAuthorized := false
 	user := update.EffectiveUser()
+	chatID := update.EffectiveChat().GetID()
 
 	viperMutex.RLock()
 	allowedUsers := viper.GetIntSlice("allowed_user")
@@ -74,7 +75,7 @@ func AdminAccess(ctx *ext.Context, update *ext.Update, whitelistDb *sql.DB) bool
 	}
 
 	if !isAuthorized {
-		log.Printf("Неавторизований доступ до адмінських команд: %s (UserID: %d, ChatID: %d)", user.Username, user.ID)
+		log.Printf("Неавторизований доступ до адмінських команд: %s (UserID: %d, ChatID: %d)", user.Username, user.ID, chatID)
 		return false
 	}
 	return true
