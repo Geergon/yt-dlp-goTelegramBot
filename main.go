@@ -56,6 +56,7 @@ var (
 	semaphore      = make(chan struct{}, 2)
 	processingURLs = sync.Map{}
 	whitelistDb    *sql.DB
+	cacheDb        *sql.DB
 )
 
 func main() {
@@ -118,12 +119,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := database.InitCacheTable(whitelistDb); err != nil {
-		log.Fatal(err)
-	}
 	defer whitelistDb.Close()
 
-	go startCacheCleanup(whitelistDb)
+	cacheDb, err = database.InitCacheDB("./db/cache.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cacheDb.Close()
+
+	go startCacheCleanup(cacheDb)
 
 	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
 	if err != nil {
@@ -422,7 +426,7 @@ func StartWorkers(client *gotgproto.Client, numWorkers int) {
 				log.Printf("Черга URL: %v", urlQueue)
 				semaphore <- struct{}{}
 				log.Printf("Воркер %d обробляє URL: %s (команда: %s)", workerID, req.URL, req.Command)
-				err := tgbot.ProcessURL(whitelistDb, req)
+				err := tgbot.ProcessURL(cacheDb, req)
 				if err != nil {
 					log.Printf("Помилка обробки URL %s: %v", req.URL, err)
 					processingURLs.Delete(req.URL)

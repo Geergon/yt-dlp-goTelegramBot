@@ -125,7 +125,7 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func ProcessURL(whitelistDb *sql.DB, req URLRequest) error {
+func ProcessURL(cacheDb *sql.DB, req URLRequest) error {
 	// Створюємо контекст із таймаутом у 10 хвилин
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
@@ -135,7 +135,7 @@ func ProcessURL(whitelistDb *sql.DB, req URLRequest) error {
 	errChan := make(chan error, 1)
 	go func() {
 		log.Printf("Починаємо обробку URL %s (команда: %s)", req.URL, req.Command)
-		errChan <- processURLWithContext(whitelistDb, req)
+		errChan <- processURLWithContext(cacheDb, req)
 	}()
 
 	select {
@@ -157,14 +157,14 @@ func ProcessURL(whitelistDb *sql.DB, req URLRequest) error {
 	}
 }
 
-func processURLWithContext(whitelistDb *sql.DB, req URLRequest) error {
+func processURLWithContext(cacheDb *sql.DB, req URLRequest) error {
 	chatID := req.Update.EffectiveChat().GetID()
 
 	switch req.Command {
 	case "auto":
-		return processAutoDownload(whitelistDb, req, chatID)
+		return processAutoDownload(cacheDb, req, chatID)
 	case "download":
-		return processDownload(whitelistDb, req, chatID)
+		return processDownload(cacheDb, req, chatID)
 	case "audio":
 		return processAudio(req, chatID)
 	case "fragment":
@@ -175,7 +175,7 @@ func processURLWithContext(whitelistDb *sql.DB, req URLRequest) error {
 	}
 }
 
-func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
+func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	viperMutex.RLock()
 	autoDownload := viper.GetBool("auto_download")
 	longVideoDownload := viper.GetBool("long_video_download")
@@ -227,7 +227,7 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 		},
 	}
 
-	if cached, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+	if cached, ok := database.GetCachedFile(cacheDb, req.URL); ok {
 		if cached.DocID != 0 {
 			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
 			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -259,7 +259,7 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 			}
 		} else {
 			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
-			database.DeleteCachedFile(whitelistDb, req.URL)
+			database.DeleteCachedFile(cacheDb, req.URL)
 		}
 	}
 
@@ -336,7 +336,7 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 	}
 
 	if err == nil && doc != nil && !isPhoto {
-		saveToCache(whitelistDb, req.URL, database.CachedMedia{
+		saveToCache(cacheDb, req.URL, database.CachedMedia{
 			FilePath:      mediaFileName,
 			DocID:         doc.ID,
 			AccessHash:    doc.AccessHash,
@@ -348,7 +348,7 @@ func processAutoDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) erro
 	return nil
 }
 
-func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
+func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
 	})
@@ -369,7 +369,7 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 		},
 	}
 
-	if cached, ok := database.GetCachedFile(whitelistDb, req.URL); ok {
+	if cached, ok := database.GetCachedFile(cacheDb, req.URL); ok {
 		if cached.DocID != 0 {
 			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
 			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -401,7 +401,7 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 			}
 		} else {
 			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
-			database.DeleteCachedFile(whitelistDb, req.URL)
+			database.DeleteCachedFile(cacheDb, req.URL)
 		}
 	}
 
@@ -467,7 +467,7 @@ func processDownload(whitelistDb *sql.DB, req URLRequest, chatID int64) error {
 	}
 
 	if err == nil && doc != nil && !isPhoto {
-		saveToCache(whitelistDb, req.URL, database.CachedMedia{
+		saveToCache(cacheDb, req.URL, database.CachedMedia{
 			FilePath:      mediaFileName,
 			DocID:         doc.ID,
 			AccessHash:    doc.AccessHash,
