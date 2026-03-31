@@ -84,8 +84,9 @@ If necessary, you can drop cookies into the cookies directory. The files should 
     - /download: Manually trigger a download for the provided URL.
     - /fragment <URL> <start-end>: Extract a video fragment (e.g., /fragment <https://www.youtube.com/watch?v=XYZ> 05:00-07:00).
     - /audio: Download and send the audio version of the provided URL.
-    - /logs: Send bot logs in the chat
-    - /update: Update yt-dlp and gallery-dl version
+    - /logs: Send bot logs in the chat.
+    - /update: Update yt-dlp and gallery-dl version.
+    - /spoiler: Manually trigger a download for the provided URL and send video with spoiler.
 
 ### Stopping the Bot
 
