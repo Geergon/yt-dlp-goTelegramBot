@@ -10,18 +10,18 @@ COPY . .
 
 RUN go build -o main main.go
 
-FROM jrottenberg/ffmpeg:6-alpine
+FROM jrottenberg/ffmpeg:8-alpine
 
 COPY updatebot ./
 
 COPY --from=builder /app/main /app
 
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
-  apk --no-cache add \
+RUN apk --no-cache add \
   jq curl \
   bash \
-  gallery-dl \
+  python3 py3-pip \
   dumb-init \
+  && pip3 install --break-system-packages gallery-dl \
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_musllinux \
   -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
 
