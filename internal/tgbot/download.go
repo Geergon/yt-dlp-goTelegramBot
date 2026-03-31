@@ -3,7 +3,10 @@ package tgbot
 import (
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"image/jpeg"
 	"io"
@@ -21,9 +24,9 @@ import (
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/celestix/gotgproto/types"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 	"github.com/spf13/viper"
 )
 
@@ -36,8 +39,6 @@ type URLRequest struct {
 	Update   *ext.Update
 	Spoiler  bool
 }
-
-var bot *tgbotapi.BotAPI
 
 func init() {
 	err := os.MkdirAll("video", 0755)
@@ -61,12 +62,6 @@ func init() {
 	if botToken == "" {
 		log.Fatal("BOT_TOKEN не задано")
 	}
-
-	bot, err = tgbotapi.NewBotAPI(botToken)
-	if err != nil {
-		log.Fatalf("Помилка ініціалізації бота: %v", err)
-	}
-	bot.Debug = false
 }
 
 func extractDocumentFromMessage(msg *types.Message) *tg.Document {
@@ -1072,28 +1067,119 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", sentMsgId, chatID, url)
 		}
 
-		botChatID := chatID
-		idAsString := strconv.FormatInt(botChatID, 10)
-		prefixedIDString := "-100" + idAsString
-		newTelegramID, err := strconv.ParseInt(prefixedIDString, 10, 64)
+		var multiMedia []tg.InputSingleMedia
+		peerStorage := ctx.PeerStorage
+		inputPeer := peerStorage.GetInputPeerById(chatID)
+		log.Printf("Peer тип: %T, значення: %+v", inputPeer, inputPeer)
 
-		log.Printf("Надсилання %d зображень до чату: ID %d, використовуючи telegram-bot-api", len(images), botChatID)
-		var mediaGroup []interface{}
 		for i, filePath := range images {
-			media := tgbotapi.NewInputMediaPhoto(tgbotapi.FilePath(filePath))
-			if i == 0 {
-				media.Caption = fmt.Sprintf("%s (<a href=\"%s\">link</a>)", username, url)
-				media.ParseMode = "HTML"
+
+			var uploaded tg.MessageMediaClass
+			var err error
+
+			if i > 0 {
+				time.Sleep(500 * time.Millisecond)
 			}
-			mediaGroup = append(mediaGroup, media)
+
+			stat, err := os.Stat(filePath)
+			if err != nil {
+				log.Printf("Файл не існує: %s: %v", filePath, err)
+				continue
+			}
+			log.Printf("Надсилаємо фото %d: %s, розмір: %d байт", i, filePath, stat.Size())
+
+			fileBytes, err := os.ReadFile(filePath)
+			if err != nil {
+				log.Printf("Помилка читання файлу %s: %v", filePath, err)
+				return nil, err
+			}
+
+			fileData, err := uploader.NewUploader(ctx.Raw).
+				WithThreads(1).
+				FromBytes(ctx, filepath.Base(filePath), fileBytes)
+			if err != nil {
+				log.Printf("Помилка завантаження фото %s: %v", filePath, err)
+				return nil, err
+			}
+
+			for attempt := 0; attempt < 3; attempt++ {
+				uploaded, err = ctx.Raw.MessagesUploadMedia(ctx, &tg.MessagesUploadMediaRequest{
+					Peer:  inputPeer,
+					Media: &tg.InputMediaUploadedPhoto{File: fileData},
+				})
+				if err == nil {
+					break
+				}
+
+				var rpcErr *tgerr.Error
+				if errors.As(err, &rpcErr) && rpcErr.Type == "FLOOD_WAIT" {
+					waitSec := rpcErr.Argument + 1
+					log.Printf("FLOOD_WAIT %d секунд, чекаємо...", waitSec)
+					time.Sleep(time.Duration(waitSec) * time.Second)
+					continue
+				}
+
+				log.Printf("Помилка MessagesUploadMedia для %s: %v", filePath, err)
+				return nil, err
+			}
+			if err != nil {
+				log.Printf("Не вдалось завантажити фото після 3 спроб: %s", filePath)
+				return nil, err
+			}
+			log.Printf("MessagesUploadMedia результат: %T", uploaded)
+
+			msgMedia, ok := uploaded.(*tg.MessageMediaPhoto)
+			if !ok {
+				log.Printf("Неочікуваний тип після upload: %T", uploaded)
+				return nil, fmt.Errorf("неочікуваний тип медіа після завантаження")
+			}
+			photo, ok := msgMedia.Photo.(*tg.Photo)
+			if !ok {
+				return nil, fmt.Errorf("не вдалось отримати Photo")
+			}
+
+			var message string
+			var entities []tg.MessageEntityClass
+			if i == 0 {
+				message = fmt.Sprintf("%s (link)", username)
+				entities = []tg.MessageEntityClass{
+					&tg.MessageEntityTextURL{
+						Offset: len(username) + 1,
+						Length: 6,
+						URL:    url,
+					},
+				}
+			}
+
+			var randomID int64
+			binary.Read(rand.Reader, binary.LittleEndian, &randomID)
+
+			multiMedia = append(multiMedia, tg.InputSingleMedia{
+				RandomID: randomID,
+				Media: &tg.InputMediaPhoto{
+					ID: &tg.InputPhoto{
+						ID:            photo.ID,
+						AccessHash:    photo.AccessHash,
+						FileReference: photo.FileReference,
+					},
+				},
+				Message:  message,
+				Entities: entities,
+			})
 		}
-		msgConfig := tgbotapi.NewMediaGroup(newTelegramID, mediaGroup)
-		_, err = bot.SendMediaGroup(msgConfig)
+
+		log.Printf("Надсилаємо SendMultiMedia: chatID=%d, кількість медіа=%d", chatID, len(multiMedia))
+		_, err = ctx.SendMultiMedia(chatID, &tg.MessagesSendMultiMediaRequest{
+			Silent:     false,
+			ClearDraft: false,
+			MultiMedia: multiMedia,
+		})
 		if err != nil {
-			log.Printf("Помилка відправлення медіа-групи через telegram-bot-api: %v", err)
+			log.Printf("Помилка відправлення медіа-групи: %v", err)
 			return nil, err
 		}
-		log.Printf("Альбом з %d зображеннями усіпшно відправлено", len(images))
+		log.Printf("Альбом з %d зображеннями успішно відправлено", len(images))
+
 	} else if isAudio {
 
 		ctx.DeleteMessages(chatID, []int{sentMsgId})
