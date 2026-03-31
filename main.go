@@ -28,8 +28,6 @@ import (
 	"github.com/celestix/gotgproto/dispatcher/handlers/filters"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/celestix/gotgproto/sessionMaker"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func init() {
@@ -51,7 +49,6 @@ func init() {
 
 var (
 	viperMutex     sync.RWMutex
-	bot            *tgbotapi.BotAPI
 	urlQueue       = make(chan tgbot.URLRequest, 100)
 	semaphore      = make(chan struct{}, 2)
 	processingURLs = sync.Map{}
@@ -128,11 +125,6 @@ func main() {
 	defer cacheDb.Close()
 
 	go startCacheCleanup(cacheDb)
-
-	bot, err = tgbotapi.NewBotAPI(botToken) // Замініть на ваш токен бота
-	if err != nil {
-		log.Fatalf("Помилка ініціалізації бота: %v", err)
-	}
 
 	client, err := gotgproto.NewClient(
 		// Get AppID from https://my.telegram.org/apps
@@ -688,42 +680,78 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 	var isValid bool
 
 	if update.EffectiveMessage.ReplyTo != nil {
-
 		log.Println("Команда є відповіддю")
-		replyToMsgID := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader).ReplyToMsgID
+
+		replyHeader, ok := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader)
+		if !ok {
+			log.Println("Не вдалось отримати ReplyHeader")
+			return nil
+		}
+		replyToMsgID := replyHeader.ReplyToMsgID
 		log.Printf("ReplyToMsgID: %d", replyToMsgID)
 
-		config := tgbotapi.NewUpdate(0)
-		config.Timeout = 60
-		config.Limit = 1
-		config.Offset = -1
-		msgUpdates, err := bot.GetUpdates(config)
-		if err != nil {
-			log.Printf("Помилка отримання оновлень: %v", err)
-			return err
+		var replyText string
+
+		inputPeer := ctx.PeerStorage.GetInputPeerById(chatID)
+		switch peer := inputPeer.(type) {
+		case *tg.InputPeerChannel:
+			// Супергрупа або канал
+			msgs, err := ctx.Raw.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
+				Channel: &tg.InputChannel{
+					ChannelID:  peer.ChannelID,
+					AccessHash: peer.AccessHash,
+				},
+				ID: []tg.InputMessageClass{
+					&tg.InputMessageID{ID: replyToMsgID},
+				},
+			})
+			if err != nil {
+				log.Printf("Помилка отримання повідомлення з каналу: %v", err)
+				return err
+			}
+			channelMsgs, ok := msgs.(*tg.MessagesChannelMessages)
+			if !ok || len(channelMsgs.Messages) == 0 {
+				log.Println("Повідомлення не знайдено")
+				return nil
+			}
+			msg, ok := channelMsgs.Messages[0].(*tg.Message)
+			if !ok {
+				return nil
+			}
+			replyText = msg.Message
+
+		case *tg.InputPeerUser, *tg.InputPeerChat:
+			// Особистий чат або звичайна група
+			msgs, err := ctx.Raw.MessagesGetMessages(ctx, []tg.InputMessageClass{
+				&tg.InputMessageID{ID: replyToMsgID},
+			})
+			if err != nil {
+				log.Printf("Помилка отримання повідомлення: %v", err)
+				return err
+			}
+			msgsObj, ok := msgs.(*tg.MessagesMessages)
+			if !ok || len(msgsObj.Messages) == 0 {
+				log.Println("Повідомлення не знайдено")
+				return nil
+			}
+			msg, ok := msgsObj.Messages[0].(*tg.Message)
+			if !ok {
+				return nil
+			}
+			replyText = msg.Message
+
+		default:
+			log.Printf("Невідомий тип peer: %T", inputPeer)
+			return nil
 		}
-		if len(msgUpdates) == 0 {
-			log.Println("Жодного оновлення не отримано")
-			return err
-		}
-		tgMsg := msgUpdates[0].Message
-		if tgMsg == nil || tgMsg.ReplyToMessage == nil {
-			log.Printf("Повідомлення з ID %d не містить ReplyToMessage", update.EffectiveMessage.ID)
-			return err
-		}
-		if tgMsg.ReplyToMessage.MessageID != replyToMsgID {
-			log.Printf("ReplyToMsgID не співпадає: очікувалося %d, отримано %d", replyToMsgID, tgMsg.ReplyToMessage.MessageID)
-			return err
-		}
-		replyText := tgMsg.ReplyToMessage.Text
+
 		log.Printf("ReplyToMessage text: %s", replyText)
 		if replyText == "" {
 			log.Println("ReplyToMessage не містить тексту")
-			return err
+			return nil
 		}
+
 		url, isValid, platform = tgbot.UrlFromText(replyText)
-		// platform = "YouTube"
-		// url, isValid = yt.GetYoutubeURL(replyText)
 	} else {
 		log.Println("Команда не є відповіддю")
 		url, isValid, platform = tgbot.Url(update)
@@ -775,42 +803,78 @@ func Spoiler(ctx *ext.Context, update *ext.Update) error {
 	var isValid bool
 
 	if update.EffectiveMessage.ReplyTo != nil {
-
 		log.Println("Команда є відповіддю")
-		replyToMsgID := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader).ReplyToMsgID
+
+		replyHeader, ok := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader)
+		if !ok {
+			log.Println("Не вдалось отримати ReplyHeader")
+			return nil
+		}
+		replyToMsgID := replyHeader.ReplyToMsgID
 		log.Printf("ReplyToMsgID: %d", replyToMsgID)
 
-		config := tgbotapi.NewUpdate(0)
-		config.Timeout = 60
-		config.Limit = 1
-		config.Offset = -1
-		msgUpdates, err := bot.GetUpdates(config)
-		if err != nil {
-			log.Printf("Помилка отримання оновлень: %v", err)
-			return err
+		var replyText string
+
+		inputPeer := ctx.PeerStorage.GetInputPeerById(chatID)
+		switch peer := inputPeer.(type) {
+		case *tg.InputPeerChannel:
+			// Супергрупа або канал
+			msgs, err := ctx.Raw.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
+				Channel: &tg.InputChannel{
+					ChannelID:  peer.ChannelID,
+					AccessHash: peer.AccessHash,
+				},
+				ID: []tg.InputMessageClass{
+					&tg.InputMessageID{ID: replyToMsgID},
+				},
+			})
+			if err != nil {
+				log.Printf("Помилка отримання повідомлення з каналу: %v", err)
+				return err
+			}
+			channelMsgs, ok := msgs.(*tg.MessagesChannelMessages)
+			if !ok || len(channelMsgs.Messages) == 0 {
+				log.Println("Повідомлення не знайдено")
+				return nil
+			}
+			msg, ok := channelMsgs.Messages[0].(*tg.Message)
+			if !ok {
+				return nil
+			}
+			replyText = msg.Message
+
+		case *tg.InputPeerUser, *tg.InputPeerChat:
+			// Особистий чат або звичайна група
+			msgs, err := ctx.Raw.MessagesGetMessages(ctx, []tg.InputMessageClass{
+				&tg.InputMessageID{ID: replyToMsgID},
+			})
+			if err != nil {
+				log.Printf("Помилка отримання повідомлення: %v", err)
+				return err
+			}
+			msgsObj, ok := msgs.(*tg.MessagesMessages)
+			if !ok || len(msgsObj.Messages) == 0 {
+				log.Println("Повідомлення не знайдено")
+				return nil
+			}
+			msg, ok := msgsObj.Messages[0].(*tg.Message)
+			if !ok {
+				return nil
+			}
+			replyText = msg.Message
+
+		default:
+			log.Printf("Невідомий тип peer: %T", inputPeer)
+			return nil
 		}
-		if len(msgUpdates) == 0 {
-			log.Println("Жодного оновлення не отримано")
-			return err
-		}
-		tgMsg := msgUpdates[0].Message
-		if tgMsg == nil || tgMsg.ReplyToMessage == nil {
-			log.Printf("Повідомлення з ID %d не містить ReplyToMessage", update.EffectiveMessage.ID)
-			return err
-		}
-		if tgMsg.ReplyToMessage.MessageID != replyToMsgID {
-			log.Printf("ReplyToMsgID не співпадає: очікувалося %d, отримано %d", replyToMsgID, tgMsg.ReplyToMessage.MessageID)
-			return err
-		}
-		replyText := tgMsg.ReplyToMessage.Text
+
 		log.Printf("ReplyToMessage text: %s", replyText)
 		if replyText == "" {
 			log.Println("ReplyToMessage не містить тексту")
-			return err
+			return nil
 		}
+
 		url, isValid, platform = tgbot.UrlFromText(replyText)
-		// platform = "YouTube"
-		// url, isValid = yt.GetYoutubeURL(replyText)
 	} else {
 		log.Println("Команда не є відповіддю")
 		url, isValid, platform = tgbot.Url(update)
