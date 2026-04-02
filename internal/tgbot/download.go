@@ -208,6 +208,11 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
 	})
 	if err != nil {
+		var rpcErr *tgerr.Error
+		if errors.As(err, &rpcErr) && rpcErr.Code == 403 {
+			log.Printf("Немає прав писати в чат %d, пропускаємо", chatID)
+			return nil
+		}
 		log.Printf("Помилка надсилання початкового повідомлення: %v", err)
 		return err
 	}
@@ -350,9 +355,15 @@ func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
 	})
 	if err != nil {
+		var rpcErr *tgerr.Error
+		if errors.As(err, &rpcErr) && rpcErr.Code == 403 {
+			log.Printf("Немає прав писати в чат %d, пропускаємо", chatID)
+			return nil
+		}
 		log.Printf("Помилка надсилання початкового повідомлення: %v", err)
 		return err
 	}
+
 	sentMsgId := sentMsg.GetID()
 
 	user := req.Update.EffectiveUser()
@@ -1060,12 +1071,6 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 	}
 
 	if isPhoto {
-		err := ctx.DeleteMessages(chatID, []int{sentMsgId})
-		if err != nil {
-			log.Println("Помилка видалення повідомлення")
-		} else {
-			log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", sentMsgId, chatID, url)
-		}
 
 		var multiMedia []tg.InputSingleMedia
 		peerStorage := ctx.PeerStorage
@@ -1140,7 +1145,7 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 
 			var message string
 			var entities []tg.MessageEntityClass
-			if i == 0 {
+			if i == 0 || i == 10 {
 				message = fmt.Sprintf("%s (link)", username)
 				entities = []tg.MessageEntityClass{
 					&tg.MessageEntityTextURL{
@@ -1168,17 +1173,54 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			})
 		}
 
-		log.Printf("Надсилаємо SendMultiMedia: chatID=%d, кількість медіа=%d", chatID, len(multiMedia))
-		_, err = ctx.SendMultiMedia(chatID, &tg.MessagesSendMultiMediaRequest{
-			Silent:     false,
-			ClearDraft: false,
-			MultiMedia: multiMedia,
-		})
-		if err != nil {
-			log.Printf("Помилка відправлення медіа-групи: %v", err)
-			return nil, err
+		const maxAlbumSize = 10
+		for i := 0; i < len(multiMedia); i += maxAlbumSize {
+			end := i + maxAlbumSize
+			if end > len(multiMedia) {
+				end = len(multiMedia)
+			}
+			chunk := multiMedia[i:end]
+
+			var sendErr error
+			for attempt := 0; attempt < 3; attempt++ {
+				_, sendErr = ctx.SendMultiMedia(chatID, &tg.MessagesSendMultiMediaRequest{
+					Silent:     false,
+					ClearDraft: false,
+					MultiMedia: chunk,
+				})
+				if sendErr == nil {
+					break
+				}
+
+				var rpcErr *tgerr.Error
+				if errors.As(sendErr, &rpcErr) && rpcErr.Type == "FLOOD_WAIT" {
+					waitSec := rpcErr.Argument + 1
+					log.Printf("FLOOD_WAIT %d секунд перед надсиланням альбому, чекаємо...", waitSec)
+					time.Sleep(time.Duration(waitSec) * time.Second)
+					continue
+				}
+
+				log.Printf("Помилка відправлення медіа-групи: %v", sendErr)
+				return nil, sendErr
+			}
+			if sendErr != nil {
+				log.Printf("Не вдалось надіслати альбом після 3 спроб: %v", sendErr)
+				return nil, sendErr
+			}
+
+			log.Printf("Надіслано альбом %d-%d з %d фото", i+1, end, len(multiMedia))
+
+			if end < len(multiMedia) {
+				time.Sleep(500 * time.Millisecond)
+			}
 		}
-		log.Printf("Альбом з %d зображеннями успішно відправлено", len(images))
+		log.Printf("Всі %d зображень успішно відправлено", len(images))
+		err := ctx.DeleteMessages(chatID, []int{sentMsgId})
+		if err != nil {
+			log.Println("Помилка видалення повідомлення")
+		} else {
+			log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", sentMsgId, chatID, url)
+		}
 
 	} else if isAudio {
 
@@ -1217,7 +1259,6 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 	if deleteURL && !fail {
 		if strings.TrimSpace(text) == url {
 			log.Printf("Спроба видалити повідомлення (ID: %d, ChatID: %d) з URL: %s", msg.ID, chatID, url)
-
 			err := ctx.DeleteMessages(chatID, []int{msg.ID})
 			if err != nil {
 				log.Printf("Помилка видалення повідомлення (ID: %d, ChatID: %d): %v", msg.ID, chatID, err)
