@@ -242,6 +242,7 @@ func DownloadAudio(url string, platform string) ([]string, string, error) {
 	args := []string{
 		"--extract-audio",
 		"--embed-thumbnail",
+		"--embed-metadata",
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
 		"-o", path.Join(dir, "%(title)s.%(ext)s"),
