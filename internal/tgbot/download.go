@@ -252,10 +252,10 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		// Fallback на файловий кеш...
 		if _, err := os.Stat(cached.FilePath); err == nil {
 			log.Printf("Знайдено в кеші: %s", cached.FilePath)
-			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
+			images, media, thumbName, musicPath, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
 			if err == nil {
 				deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, false)
-				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, musicPath, media, chatID, sentMsgId)
 				return err
 			}
 		} else {
@@ -292,7 +292,7 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler, galleryDir)
+	images, media, thumbName, musicPath, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler, galleryDir)
 	if errCheck != nil {
 		log.Printf("Помилка при обробці медіа: %v", errCheck)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -324,7 +324,7 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
+	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, musicPath, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		deleteMedia(req.Context, req.Update, req.URL, chatID, mediaFileName, thumbName, true)
@@ -403,10 +403,10 @@ func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		// Fallback на файловий кеш...
 		if _, err := os.Stat(cached.FilePath); err == nil {
 			log.Printf("Знайдено в кеші: %s", cached.FilePath)
-			images, media, thumbName, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
+			images, media, thumbName, musicPath, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
 			if err == nil {
 				deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, false)
-				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, media, chatID, sentMsgId)
+				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, musicPath, media, chatID, sentMsgId)
 				return err
 			}
 		} else {
@@ -438,7 +438,7 @@ func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	images, media, thumbName, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler, galleryDir)
+	images, media, thumbName, musicPath, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, isPhoto, mediaFileName, req.Spoiler, galleryDir)
 	if errCheck != nil {
 		log.Printf("Помилка при обробці медіа: %v", errCheck)
 		_, editErr := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
@@ -461,7 +461,7 @@ func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		return err
 	}
 
-	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, media, chatID, sentMsgId)
+	doc, err := sendMedia(req.Context, req.Update, req.URL, isPhoto, false, images, musicPath, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		deleteMedia(req.Context, req.Update, req.URL, chatID, mediaFileName, thumbName, true)
@@ -776,7 +776,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		return err
 	}
 
-	_, err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, media, chatID, sentMsgId)
+	_, err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, "", media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні аудіо: %v", err)
 		if err := os.RemoveAll(audioDir); err != nil {
@@ -941,11 +941,13 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	return isPhoto, mediaFileName, galleryDir, nil
 }
 
-func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platform string, isPhoto bool, mediaFileName string, spoiler bool, galleryDir string) ([]string, tg.InputMediaClass, string, error) {
+func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platform string, isPhoto bool, mediaFileName string, spoiler bool, galleryDir string) ([]string, tg.InputMediaClass, string, string, error) {
 	var thumbName string
 	var media tg.InputMediaClass
 	var isExist bool
 	var isVideo bool
+	var hasMusic bool
+	var musicPath string
 	var images []string
 
 	if !isPhoto {
@@ -961,7 +963,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 				Message: "Помилка: не вдалося завантажити відео: " + logMsg,
 			})
 			deleteMsgTimer(ctx, chatID, sentMsgId)
-			return nil, nil, "", err
+			return nil, nil, "", "", err
 		}
 
 		if file.IsDir() {
@@ -971,7 +973,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 				Message: "Помилка: завантажений файл є директорією.",
 			})
 			deleteMsgTimer(ctx, chatID, sentMsgId)
-			return nil, nil, "", fmt.Errorf("Файл %s є директорією", mediaFileName)
+			return nil, nil, "", "", fmt.Errorf("Файл %s є директорією", mediaFileName)
 		}
 
 		fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
@@ -985,7 +987,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			if editErr != nil {
 				log.Printf("Помилка редагування повідомлення: %v", editErr)
 			}
-			return nil, nil, "", err
+			return nil, nil, "", "", err
 		}
 
 		media = &tg.InputMediaUploadedDocument{
@@ -1014,14 +1016,14 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			}
 		}
 	} else {
-		images, isExist, isVideo = yt.GetPhotoPathList(galleryDir)
+		images, isExist, isVideo, hasMusic, musicPath = yt.GetPhotoPathList(galleryDir)
 		if !isExist {
 			log.Println("Помилка при завантаженні фотографій. Їх не існує")
-			return nil, nil, "", fmt.Errorf("Помилка при завантаженні фотографій")
+			return nil, nil, "", "", fmt.Errorf("Помилка при завантаженні фотографій")
 		}
 		if isVideo {
 			if len(images) == 0 {
-				return nil, nil, "", fmt.Errorf("відео файл не знайдено в папці photo")
+				return nil, nil, "", "", fmt.Errorf("відео файл не знайдено в папці photo")
 			}
 			_, err := os.Stat(images[0])
 			mediaFileName = images[0]
@@ -1036,7 +1038,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 					Message: "Помилка: не вдалося завантажити відео: " + logMsg,
 				})
 				deleteMsgTimer(ctx, chatID, sentMsgId)
-				return nil, nil, "", err
+				return nil, nil, "", "", err
 			}
 
 			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
@@ -1050,7 +1052,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 				if editErr != nil {
 					log.Printf("Помилка редагування повідомлення: %v", editErr)
 				}
-				return nil, nil, "", err
+				return nil, nil, "", "", err
 			}
 
 			media = &tg.InputMediaUploadedDocument{
@@ -1091,12 +1093,15 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 					continue
 				}
 			}
+			if hasMusic && musicPath != "" {
+				return images, media, thumbName, musicPath, nil
+			}
 		}
 	}
-	return images, media, thumbName, nil
+	return images, media, thumbName, "", nil
 }
 
-func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, isAudio bool, images []string, media tg.InputMediaClass, chatID int64, sentMsgId int) (*tg.Document, error) {
+func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, isAudio bool, images []string, musicPath string, media tg.InputMediaClass, chatID int64, sentMsgId int) (*tg.Document, error) {
 	user := update.EffectiveUser()
 	username := "@" + user.Username
 	title := username + " (link)"
@@ -1269,6 +1274,46 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			log.Println("Помилка видалення повідомлення")
 		} else {
 			log.Printf("Повідомлення (ID: %d, ChatID: %d) з URL %s видалено", sentMsgId, chatID, url)
+		}
+
+		if musicPath != "" {
+			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, musicPath)
+			if err != nil {
+				log.Printf("Помилка завантаження аудіо в Telegram: %v", err)
+				logErr := fmt.Sprintf("Помилка завантаження аудіо в Telegram: %v", err)
+				_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+					ID:      sentMsgId,
+					Message: logErr,
+				})
+				if editErr != nil {
+					log.Printf("Помилка редагування повідомлення: %v", editErr)
+				}
+				deleteMsgTimer(ctx, chatID, sentMsgId)
+				log.Printf("Не вдалось музичний файл : %v", editErr)
+				// return nil, editErr
+			}
+
+			name := filepath.Base(musicPath)
+			media := &tg.InputMediaUploadedDocument{
+				File:     fileData,
+				MimeType: "audio/mpeg",
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeAudio{
+						Title: strings.TrimSuffix(name, filepath.Ext(name)),
+					},
+					&tg.DocumentAttributeFilename{
+						FileName: musicPath,
+					},
+				},
+			}
+
+			_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
+				Media: media,
+			})
+			if err != nil {
+				log.Printf("Помилка надсилання повідомлення з аудіо: %v", err)
+				return nil, err
+			}
 		}
 
 	} else if isAudio {

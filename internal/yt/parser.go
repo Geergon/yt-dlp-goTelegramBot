@@ -99,7 +99,7 @@ func GetVideoInfo(url string, platform string) (*VideoInfo, error) {
 //		videoName := fmt.Sprintf("%s.mp4", info.ID)
 //		return videoName
 //	}
-func GetPhotoPathList(dir string) ([]string, bool, bool) {
+func GetPhotoPathList(dir string) ([]string, bool, bool, bool, string) {
 	photo := os.DirFS(dir)
 
 	jpgFiles, err := fs.Glob(photo, "*.jpg")
@@ -112,25 +112,32 @@ func GetPhotoPathList(dir string) ([]string, bool, bool) {
 		log.Printf("Помилка пошуку png в %s: %v", dir, err)
 	}
 
-	// mp3Files, err := fs.Glob(photo, "*.mp3")
-	// if err != nil {
-	// 	log.Printf("Помилка пошуку mp3 в %s: %v", dir, err)
-	// }
+	mp3Files, err := fs.Glob(photo, "*.mp3")
+	if err != nil {
+		log.Printf("Помилка пошуку mp3 в %s: %v", dir, err)
+	}
 
 	mp4Files, err := fs.Glob(photo, "*.mp4")
 	if err != nil {
 		log.Printf("Помилка пошуку mp4 в %s: %v", dir, err)
 	}
 
-	// for _, m := range mp3Files {
-	// 	path := path.Join(dir, m)
-	// 	os.Remove(path)
-	// }
+	hasMusic := false
+	musicPath := ""
+	if len(mp3Files) != 0 {
+		hasMusic = true
+		musicPath = path.Join(dir, mp3Files[0])
+	}
+
+	var isExist bool
+	var isVideo bool
 
 	var videoPath []string
 	if len(mp4Files) != 0 {
 		videoPath = append(videoPath, path.Join(dir, mp4Files[0]))
-		return videoPath, true, true
+		isExist = true
+		isVideo = true
+		return videoPath, isExist, isVideo, hasMusic, musicPath
 	}
 
 	var photos []string
@@ -142,7 +149,11 @@ func GetPhotoPathList(dir string) ([]string, bool, bool) {
 	}
 	log.Println(photos)
 	if len(photos) != 0 {
-		return photos, true, false
+		isExist = true
+		isVideo = false
+		return photos, isExist, isVideo, hasMusic, musicPath
 	}
-	return nil, false, false
+	isExist = false
+	isVideo = false
+	return nil, isExist, isVideo, hasMusic, musicPath
 }
