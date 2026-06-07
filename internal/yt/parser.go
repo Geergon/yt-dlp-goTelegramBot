@@ -99,9 +99,10 @@ func GetVideoInfo(url string, platform string) (*VideoInfo, error) {
 //		videoName := fmt.Sprintf("%s.mp4", info.ID)
 //		return videoName
 //	}
-func GetPhotoPathList() ([]string, bool) {
+func GetPhotoPathList() ([]string, bool, bool) {
 	dir := "./photo"
 	photo := os.DirFS(dir)
+
 	jpgFiles, err := fs.Glob(photo, "*.jpg")
 	if err != nil {
 		fmt.Println("error")
@@ -116,9 +117,21 @@ func GetPhotoPathList() ([]string, bool) {
 	if err != nil {
 		fmt.Println("error")
 	}
+
+	mp4Files, err := fs.Glob(photo, "*.mp4")
+	if err != nil {
+		fmt.Println("error")
+	}
+
 	for _, m := range mp3Files {
 		path := path.Join(dir, m)
 		os.Remove(path)
+	}
+
+	var videoPath []string
+	if len(mp4Files) != 0 {
+		videoPath = append(videoPath, path.Join(dir, mp4Files[0]))
+		return videoPath, true, true
 	}
 
 	var photos []string
@@ -130,7 +143,7 @@ func GetPhotoPathList() ([]string, bool) {
 	}
 	log.Println(photos)
 	if len(photos) != 0 {
-		return photos, true
+		return photos, true, false
 	}
-	return nil, false
+	return nil, false, false
 }

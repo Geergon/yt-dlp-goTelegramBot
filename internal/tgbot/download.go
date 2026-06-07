@@ -942,6 +942,7 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 	var thumbName string
 	var media tg.InputMediaClass
 	var isExist bool
+	var isVideo bool
 	var images []string
 
 	if !isPhoto {
@@ -984,33 +985,18 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			return nil, nil, "", err
 		}
 
-		if spoiler {
-			media = &tg.InputMediaUploadedDocument{
-				File:     fileData,
-				MimeType: "video/mp4",
-				Spoiler:  true,
-				Attributes: []tg.DocumentAttributeClass{
-					&tg.DocumentAttributeVideo{
-						SupportsStreaming: true,
-					},
-					&tg.DocumentAttributeFilename{
-						FileName: mediaFileName,
-					},
+		media = &tg.InputMediaUploadedDocument{
+			File:     fileData,
+			MimeType: "video/mp4",
+			Spoiler:  spoiler,
+			Attributes: []tg.DocumentAttributeClass{
+				&tg.DocumentAttributeVideo{
+					SupportsStreaming: true,
 				},
-			}
-		} else {
-			media = &tg.InputMediaUploadedDocument{
-				File:     fileData,
-				MimeType: "video/mp4",
-				Attributes: []tg.DocumentAttributeClass{
-					&tg.DocumentAttributeVideo{
-						SupportsStreaming: true,
-					},
-					&tg.DocumentAttributeFilename{
-						FileName: mediaFileName,
-					},
+				&tg.DocumentAttributeFilename{
+					FileName: mediaFileName,
 				},
-			}
+			},
 		}
 
 		if thumbName = yt.GetThumb(url, platform); thumbName != "" {
@@ -1025,33 +1011,81 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			}
 		}
 	} else {
-		images, isExist = yt.GetPhotoPathList()
+		images, isExist, isVideo = yt.GetPhotoPathList()
 		if !isExist {
 			log.Println("Помилка при завантаженні фотографій. Їх не існує")
 			return nil, nil, "", fmt.Errorf("Помилка при завантаженні фотографій")
 		}
+		if isVideo {
+			if len(images) != 0 {
+				_, err := os.Stat(images[0])
+				mediaFileName = images[0]
+				if err != nil {
+					logMsg := "Помилка перевірки файлу відео"
+					if os.IsNotExist(err) {
+						logMsg = "Файл не існує: " + mediaFileName
+					}
+					log.Println(logMsg)
+					ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+						ID:      sentMsgId,
+						Message: "Помилка: не вдалося завантажити відео: " + logMsg,
+					})
+					deleteMsgTimer(ctx, chatID, sentMsgId)
+					return nil, nil, "", err
+				}
 
-		for _, filePath := range images {
-			fileInfo, err := os.Stat(filePath)
-			if os.IsNotExist(err) {
-				log.Printf("Файл %s не існує", filePath)
-				continue
-			}
-			if fileInfo.Size() > 10*1024*1024 {
-				log.Printf("Файл %s занадто великий: %d байтів", filePath, fileInfo.Size())
-				continue
-			}
+				fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
+				if err != nil {
+					log.Printf("Помилка завантаження відео в Telegram: %v", err)
+					logErr := fmt.Sprintf("Помилка завантаження відео в Telegram: \n%v", err)
+					_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+						ID:      sentMsgId,
+						Message: logErr,
+					})
+					if editErr != nil {
+						log.Printf("Помилка редагування повідомлення: %v", editErr)
+					}
+					return nil, nil, "", err
+				}
 
-			file, err := os.Open(filePath)
-			if err != nil {
-				log.Printf("Помилка відкриття файлу %s: %v", filePath, err)
-				continue
+				media = &tg.InputMediaUploadedDocument{
+					File:     fileData,
+					MimeType: "video/mp4",
+					Spoiler:  spoiler,
+					Attributes: []tg.DocumentAttributeClass{
+						&tg.DocumentAttributeVideo{
+							SupportsStreaming: true,
+						},
+						&tg.DocumentAttributeFilename{
+							FileName: mediaFileName,
+						},
+					},
+				}
 			}
-			defer file.Close()
-			_, err = jpeg.Decode(file)
-			if err != nil {
-				log.Printf("Файл %s не є коректним JPEG: %v", filePath, err)
-				continue
+		}
+		if !isVideo {
+			for _, filePath := range images {
+				fileInfo, err := os.Stat(filePath)
+				if os.IsNotExist(err) {
+					log.Printf("Файл %s не існує", filePath)
+					continue
+				}
+				if fileInfo.Size() > 10*1024*1024 {
+					log.Printf("Файл %s занадто великий: %d байтів", filePath, fileInfo.Size())
+					continue
+				}
+
+				file, err := os.Open(filePath)
+				if err != nil {
+					log.Printf("Помилка відкриття файлу %s: %v", filePath, err)
+					continue
+				}
+				defer file.Close()
+				_, err = jpeg.Decode(file)
+				if err != nil {
+					log.Printf("Файл %s не є коректним JPEG: %v", filePath, err)
+					continue
+				}
 			}
 		}
 	}
@@ -1070,7 +1104,18 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 		},
 	}
 
-	if isPhoto {
+	imagesIsVideo := false
+	if len(images) != 0 {
+		path := images[0]
+		fileExtension := filepath.Ext(path)
+		if fileExtension == ".mp4" {
+			imagesIsVideo = true
+		} else {
+			imagesIsVideo = false
+		}
+	}
+
+	if isPhoto && !imagesIsVideo {
 
 		var multiMedia []tg.InputSingleMedia
 		peerStorage := ctx.PeerStorage
@@ -1271,11 +1316,11 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 	if isPhoto {
 		dir := "./photo"
 		photo := os.DirFS(dir)
-		jpgFiles, err := fs.Glob(photo, "*.jpg")
+		allFiles, err := fs.Glob(photo, "*")
 		if err != nil {
 			log.Printf("Помилка пошуку JPG-файлів у %s: %v", dir, err)
 		}
-		for _, m := range jpgFiles {
+		for _, m := range allFiles {
 			filePath := path.Join(dir, m)
 			if err := os.Remove(filePath); err != nil {
 				log.Printf("Не вдалося видалити %s: %v", filePath, err)
