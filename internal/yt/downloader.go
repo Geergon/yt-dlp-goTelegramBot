@@ -75,7 +75,7 @@ func DownloadYTVideo(url string, output string, longVideoDownload bool) (bool, e
 	return false, nil
 }
 
-func DownloadTTVideo(url string, output string) (bool, error) {
+func DownloadTTVideo(url string, output string) (bool, string, error) {
 	cookies := "./cookies/cookiesTT.txt"
 
 	var ytdlpErr error
@@ -87,7 +87,7 @@ func DownloadTTVideo(url string, output string) (bool, error) {
 
 	if ytdlpErr == nil {
 		if _, err := os.Stat(output); err == nil {
-			return false, nil
+			return false, "", nil
 		}
 		log.Printf("yt-dlp succeeded but no %s for %s", output, url)
 	}
@@ -95,28 +95,29 @@ func DownloadTTVideo(url string, output string) (bool, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl TikTok URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
 	var isSuccess bool
+	var galleryDir string
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		isSuccess, galleryErr = runGalleryDl(false, url, true, false)
+		isSuccess, galleryDir, galleryErr = runGalleryDl(false, url, true, false)
 	} else {
-		isSuccess, galleryErr = runGalleryDl(true, url, true, false)
+		isSuccess, galleryDir, galleryErr = runGalleryDl(true, url, true, false)
 	}
 	if galleryErr != nil {
-		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
+		return false, "", fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
 
 	if isSuccess {
-		return true, nil // Photo
+		return true, galleryDir, nil // Photo and video through gallery-dl
 	}
 
 	if _, err := os.Stat(output); err == nil {
-		return false, nil // Video
+		return false, "", nil // Video
 	}
 
 	log.Printf("No valid output file found for %s", url)
-	return false, os.ErrNotExist
+	return false, "", os.ErrNotExist
 }
 
-func DownloadInstaVideo(url string, output string) (bool, error) {
+func DownloadInstaVideo(url string, output string) (bool, string, error) {
 	cookies := "./cookies/cookiesINSTA.txt"
 
 	var ytdlpErr error
@@ -128,7 +129,7 @@ func DownloadInstaVideo(url string, output string) (bool, error) {
 
 	if ytdlpErr == nil {
 		if _, err := os.Stat(output); err == nil {
-			return false, nil
+			return false, "", nil
 		}
 		log.Printf("yt-dlp succeeded but no %s for %s", output, url)
 	}
@@ -136,34 +137,35 @@ func DownloadInstaVideo(url string, output string) (bool, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl Instagram URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
 	var isSuccess bool
+	var galleryDir string
 	if _, err := os.Stat(cookies); os.IsNotExist(err) {
-		isSuccess, galleryErr = runGalleryDl(false, url, false, true)
+		isSuccess, galleryDir, galleryErr = runGalleryDl(false, url, false, true)
 	} else {
-		isSuccess, galleryErr = runGalleryDl(true, url, false, true)
+		isSuccess, galleryDir, galleryErr = runGalleryDl(true, url, false, true)
 	}
 	if galleryErr != nil {
-		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
+		return false, "", fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
 
 	if isSuccess {
-		return true, nil // Photo
+		return true, galleryDir, nil // Photo and video through gallery-dl
 	}
 
 	if _, err := os.Stat(output); err == nil {
-		return false, nil // Video
+		return false, "", nil // Video
 	}
 
 	log.Printf("No valid output file found for %s", url)
-	return false, os.ErrNotExist
+	return false, "", os.ErrNotExist
 }
 
-func DownloadAnyMedia(url string, output string) (bool, error) {
+func DownloadAnyMedia(url string, output string) (bool, string, error) {
 	var ytdlpErr error
 	ytdlpErr = runYtdlp(false, url, output, false, false)
 
 	if ytdlpErr == nil {
 		if _, err := os.Stat(output); err == nil {
-			return false, nil
+			return false, "", nil
 		}
 		log.Printf("yt-dlp succeeded but no %s for %s", output, url)
 	}
@@ -171,21 +173,22 @@ func DownloadAnyMedia(url string, output string) (bool, error) {
 	log.Printf("Намагаємось завантажити з gallery-dl URL %s через помилку yt-dlp : %v", url, ytdlpErr)
 	var galleryErr error
 	var isSuccess bool
-	isSuccess, galleryErr = runGalleryDl(false, url, false, false)
+	var galleryDir string
+	isSuccess, galleryDir, galleryErr = runGalleryDl(false, url, false, false)
 	if galleryErr != nil {
-		return false, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
+		return false, "", fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
 
 	if isSuccess {
-		return true, nil // Photo
+		return true, galleryDir, nil // Photo
 	}
 
 	if _, err := os.Stat(output); err == nil {
-		return false, nil // Video
+		return false, "", nil // Video
 	}
 
 	log.Printf("No valid output file found for %s", url)
-	return false, os.ErrNotExist
+	return false, "", os.ErrNotExist
 }
 
 func GetThumb(url string, platform string) string {

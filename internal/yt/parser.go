@@ -99,34 +99,33 @@ func GetVideoInfo(url string, platform string) (*VideoInfo, error) {
 //		videoName := fmt.Sprintf("%s.mp4", info.ID)
 //		return videoName
 //	}
-func GetPhotoPathList() ([]string, bool, bool) {
-	dir := "./photo"
+func GetPhotoPathList(dir string) ([]string, bool, bool) {
 	photo := os.DirFS(dir)
 
 	jpgFiles, err := fs.Glob(photo, "*.jpg")
 	if err != nil {
-		fmt.Println("error")
+		log.Printf("Помилка пошуку jpg в %s: %v", dir, err)
 	}
 
 	pngFiles, err := fs.Glob(photo, "*.png")
 	if err != nil {
-		fmt.Println("error")
+		log.Printf("Помилка пошуку png в %s: %v", dir, err)
 	}
 
-	mp3Files, err := fs.Glob(photo, "*.mp3")
-	if err != nil {
-		fmt.Println("error")
-	}
+	// mp3Files, err := fs.Glob(photo, "*.mp3")
+	// if err != nil {
+	// 	log.Printf("Помилка пошуку mp3 в %s: %v", dir, err)
+	// }
 
 	mp4Files, err := fs.Glob(photo, "*.mp4")
 	if err != nil {
-		fmt.Println("error")
+		log.Printf("Помилка пошуку mp4 в %s: %v", dir, err)
 	}
 
-	for _, m := range mp3Files {
-		path := path.Join(dir, m)
-		os.Remove(path)
-	}
+	// for _, m := range mp3Files {
+	// 	path := path.Join(dir, m)
+	// 	os.Remove(path)
+	// }
 
 	var videoPath []string
 	if len(mp4Files) != 0 {

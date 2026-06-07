@@ -533,10 +533,23 @@ func cleanOldFiles(threshold time.Duration) error {
 		return err
 	}
 
-	prefix := "audio-download-"
+	audioPrefix := "audio-download-"
+	galleryPrefix := "gallery-dl-download-"
 	lifetime := 10 * time.Minute
 	for _, file := range files {
-		if file.IsDir() && len(file.Name()) >= len(prefix) && file.Name()[:len(prefix)] == prefix {
+		if file.IsDir() && len(file.Name()) >= len(audioPrefix) && file.Name()[:len(audioPrefix)] == audioPrefix {
+
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			if time.Since(info.ModTime()) > lifetime {
+				fullPath := filepath.Join(tempDir, file.Name())
+				os.RemoveAll(fullPath)
+			}
+		}
+		if file.IsDir() && len(file.Name()) >= len(galleryPrefix) && file.Name()[:len(galleryPrefix)] == galleryPrefix {
 
 			info, err := file.Info()
 			if err != nil {
