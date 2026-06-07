@@ -1017,50 +1017,51 @@ func mediaCheck(ctx *ext.Context, chatID int64, sentMsgId int, url string, platf
 			return nil, nil, "", fmt.Errorf("Помилка при завантаженні фотографій")
 		}
 		if isVideo {
-			if len(images) != 0 {
-				_, err := os.Stat(images[0])
-				mediaFileName = images[0]
-				if err != nil {
-					logMsg := "Помилка перевірки файлу відео"
-					if os.IsNotExist(err) {
-						logMsg = "Файл не існує: " + mediaFileName
-					}
-					log.Println(logMsg)
-					ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-						ID:      sentMsgId,
-						Message: "Помилка: не вдалося завантажити відео: " + logMsg,
-					})
-					deleteMsgTimer(ctx, chatID, sentMsgId)
-					return nil, nil, "", err
+			if len(images) == 0 {
+				return nil, nil, "", fmt.Errorf("відео файл не знайдено в папці photo")
+			}
+			_, err := os.Stat(images[0])
+			mediaFileName = images[0]
+			if err != nil {
+				logMsg := "Помилка перевірки файлу відео"
+				if os.IsNotExist(err) {
+					logMsg = "Файл не існує: " + mediaFileName
 				}
+				log.Println(logMsg)
+				ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+					ID:      sentMsgId,
+					Message: "Помилка: не вдалося завантажити відео: " + logMsg,
+				})
+				deleteMsgTimer(ctx, chatID, sentMsgId)
+				return nil, nil, "", err
+			}
 
-				fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
-				if err != nil {
-					log.Printf("Помилка завантаження відео в Telegram: %v", err)
-					logErr := fmt.Sprintf("Помилка завантаження відео в Telegram: \n%v", err)
-					_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-						ID:      sentMsgId,
-						Message: logErr,
-					})
-					if editErr != nil {
-						log.Printf("Помилка редагування повідомлення: %v", editErr)
-					}
-					return nil, nil, "", err
+			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFileName)
+			if err != nil {
+				log.Printf("Помилка завантаження відео в Telegram: %v", err)
+				logErr := fmt.Sprintf("Помилка завантаження відео в Telegram: \n%v", err)
+				_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+					ID:      sentMsgId,
+					Message: logErr,
+				})
+				if editErr != nil {
+					log.Printf("Помилка редагування повідомлення: %v", editErr)
 				}
+				return nil, nil, "", err
+			}
 
-				media = &tg.InputMediaUploadedDocument{
-					File:     fileData,
-					MimeType: "video/mp4",
-					Spoiler:  spoiler,
-					Attributes: []tg.DocumentAttributeClass{
-						&tg.DocumentAttributeVideo{
-							SupportsStreaming: true,
-						},
-						&tg.DocumentAttributeFilename{
-							FileName: mediaFileName,
-						},
+			media = &tg.InputMediaUploadedDocument{
+				File:     fileData,
+				MimeType: "video/mp4",
+				Spoiler:  spoiler,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeVideo{
+						SupportsStreaming: true,
 					},
-				}
+					&tg.DocumentAttributeFilename{
+						FileName: mediaFileName,
+					},
+				},
 			}
 		}
 		if !isVideo {
