@@ -27,6 +27,7 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, s
 	args := []string{
 		"-o", "overwrite=true",
 		"--no-part",
+		"-f", "{title}.{extension}",
 		"-D", dir,
 		"-o", "directory=",
 	}
