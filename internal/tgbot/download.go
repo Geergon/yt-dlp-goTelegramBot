@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image/jpeg"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -898,18 +899,57 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, 
 	var downloadErr error
 	var isPhoto bool
 	var galleryDir string
+	var noAudioAfterRetries bool
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		isPhoto, galleryDir, downloadErr = downloadFunc(url, mediaFileName)
+		noAudioAfterRetries = false
+
 		if downloadErr == nil || isPhoto {
 			if !isPhoto && platform == "TikTok" && !yt.HasAudioTrack(mediaFileName) {
 				log.Printf("Спроба %d: файл без аудіо треку, повторюємо...", attempt)
+				noAudioAfterRetries = true
 				os.Remove(mediaFileName)
 				if attempt < maxAttempts {
 					time.Sleep(retryDelay)
 				}
 				continue
 			}
+
+			if info, err := os.Stat(galleryDir); err == nil && info.IsDir() {
+				dir := os.DirFS(galleryDir)
+				mp4Files, err := fs.Glob(dir, "*.mp4")
+				if err != nil {
+					log.Printf("Помилка пошуку mp4 в %s: %v", galleryDir, err)
+				}
+
+				if len(mp4Files) != 0 {
+					videoPath := path.Join(galleryDir, mp4Files[0])
+					if !yt.HasAudioTrack(videoPath) {
+						noAudioAfterRetries = true
+						log.Printf("Спроба %d: файл без аудіо треку, повторюємо...", attempt)
+						os.Remove(videoPath)
+						if attempt < maxAttempts {
+							time.Sleep(retryDelay)
+						}
+						continue
+					}
+				}
+			}
 			break
+		}
+
+		if noAudioAfterRetries {
+			log.Printf("Відео без аудіо після %d спроб (%s)", maxAttempts, platform)
+			errMsg := fmt.Sprintf("Відео без аудіо після %d спроб", maxAttempts)
+			_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
+				ID:      sentMsgId,
+				Message: errMsg,
+			})
+			if editErr != nil {
+				log.Printf("Помилка редагування повідомлення: %v", editErr)
+			}
+			deleteMsgTimer(ctx, chatID, sentMsgId)
+			return isPhoto, mediaFileName, "", fmt.Errorf("no audio track after retries")
 		}
 
 		log.Printf("Спроба %d завантаження (%s) не вдалося: %v", attempt, platform, downloadErr)
