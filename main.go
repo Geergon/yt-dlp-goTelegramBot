@@ -130,9 +130,9 @@ func main() {
 		// Get AppID from https://my.telegram.org/apps
 		appId,
 		// Get ApiHash from https://my.telegram.org/apps
-		os.Getenv("API_HASH"),
+		apiHash,
 		// ClientType, as we defined above
-		gotgproto.ClientTypeBot(os.Getenv("BOT_TOKEN")),
+		gotgproto.ClientTypeBot(botToken),
 		// Optional parameters of client
 		&gotgproto.ClientOpts{
 			Session: sessionMaker.SqlSession(sqlite.Open("./db/session")),
