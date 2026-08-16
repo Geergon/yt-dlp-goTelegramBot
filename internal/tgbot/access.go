@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
@@ -14,9 +15,21 @@ import (
 
 var viperMutex sync.RWMutex
 
+func normalizeChatID(id int64) int64 {
+	s := strconv.FormatInt(id, 10)
+	if strings.HasPrefix(s, "-100") {
+		trimmed := strings.TrimPrefix(s, "-100")
+		if v, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return v
+		}
+	}
+	return id
+}
+
 func Access(ctx *ext.Context, update *ext.Update, whitelistDb *sql.DB) int64 {
-	allowedChatId, _ := strconv.Atoi(os.Getenv("CHAT_ID"))
+	allowedChatId, _ := strconv.ParseInt(os.Getenv("CHAT_ID"), 10, 64)
 	chatID := update.EffectiveChat().GetID()
+	normalizedChatID := normalizeChatID(chatID)
 	user := update.EffectiveUser()
 
 	viperMutex.RLock()
@@ -25,12 +38,12 @@ func Access(ctx *ext.Context, update *ext.Update, whitelistDb *sql.DB) int64 {
 
 	isAuthorized := false
 	for _, chat := range allowedChats {
-		if int64(chat) == chatID {
+		if normalizeChatID(int64(chat)) == normalizedChatID {
 			isAuthorized = true
 			break
 		}
 	}
-	if chatID == int64(allowedChatId) {
+	if normalizeChatID(allowedChatId) == normalizedChatID {
 		isAuthorized = true
 	} else {
 		viperMutex.RLock()
