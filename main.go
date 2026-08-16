@@ -95,11 +95,6 @@ func main() {
 		log.Fatal("BOT_TOKEN не задано")
 	}
 
-	chatId := os.Getenv("CHAT_ID")
-	if chatId == "" {
-		log.Printf("CHAT_ID не задано")
-	}
-
 	viperMutex.Unlock()
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
