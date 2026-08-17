@@ -19,6 +19,7 @@ COPY --from=builder /app/main /app
 RUN apk --no-cache add \
   jq curl \
   bash \
+  nodejs \
   python3 py3-pip \
   dumb-init \
   && pip3 install --break-system-packages gallery-dl \
