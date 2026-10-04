@@ -125,6 +125,9 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 	files := listMedia(dir)
 
 	log.Printf("Завантаження %s завершено успішно", url)
+	if len(files) == 0 {
+		return DownloadResult{}, fmt.Errorf("в директорії завантаження %s відсутні файли", dir)
+	}
 	return DownloadResult{MediaDir: dir, FilePath: files[0], IsPhoto: false}, nil
 }
 
@@ -172,13 +175,20 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 }
 
 func GetThumb(url string, platform Platform) string {
+	dir, tempDirErr := createTempDir("thumbnail-download-")
+	if tempDirErr != nil {
+		log.Printf("failed to create thumbnail temp directory: %v", tempDirErr)
+		return ""
+	}
+	output := filepath.Join(dir, "thumb.%(ext)s")
+
 	cookies := cookieFiles[platform]
 
 	args := []string{
 		"--skip-download",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
-		"--output", "thumb.%(ext)s",
+		"--output", output,
 	}
 	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
 		log.Println("Використовуємо кукі")
@@ -193,7 +203,12 @@ func GetThumb(url string, platform Platform) string {
 		log.Printf("failed to get preview: %v", err)
 		return ""
 	}
-	return "thumb.jpg"
+
+	files := listMedia(dir)
+	if len(files) != 0 {
+		return files[0]
+	}
+	return ""
 }
 
 func DownloadAudio(url string, platform Platform) ([]string, string, error) {
@@ -204,15 +219,7 @@ func DownloadAudio(url string, platform Platform) ([]string, string, error) {
 
 	audioDir := os.DirFS(dir)
 
-	var cookies string
-	switch platform {
-	case YouTube:
-		cookies = "./cookies/cookiesYT.txt"
-	case TikTok:
-		cookies = "./cookies/cookiesTT.txt"
-	case Instagram:
-		cookies = "./cookies/cookiesINSTA.txt"
-	}
+	cookies := cookieFiles[platform]
 
 	args := []string{
 		"--extract-audio",
