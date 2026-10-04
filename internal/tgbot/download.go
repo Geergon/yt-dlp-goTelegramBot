@@ -703,66 +703,6 @@ func processAudio(req URLRequest, chatID int64) error {
 	return nil
 }
 
-func Url(update *ext.Update) (string, bool, string) {
-	msg := update.EffectiveMessage
-	text := msg.Text
-
-	if strings.Contains(text, "/fragment") {
-		return "", false, ""
-	}
-	var url, platform string
-	var isValid bool
-	u := strings.Fields(text)
-
-	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
-		url, isValid, platform = urlYT, true, "YouTube"
-	} else if urlTT, isTT := yt.GetTikTokURL(text); isTT {
-		url, isValid, platform = urlTT, true, "TikTok"
-	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
-		url, isValid, platform = urlInsta, true, "Instagram"
-	} else if len(u) == 2 {
-		valid := yt.IsUrl(u[1])
-		if !valid {
-			return "", false, ""
-		}
-		url, isValid, platform = u[1], true, ""
-	}
-
-	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
-		return "", false, ""
-	}
-	return url, isValid, platform
-}
-
-func UrlFromText(text string) (string, bool, string) {
-	if strings.Contains(text, "/fragment") {
-		return "", false, ""
-	}
-	var url, platform string
-	var isValid bool
-	u := strings.Fields(text)
-
-	if urlYT, isYT := yt.GetYoutubeURL(text); isYT {
-		url, isValid, platform = urlYT, true, "YouTube"
-	} else if urlTT, isTT := yt.GetTikTokURL(text); isTT {
-		url, isValid, platform = urlTT, true, "TikTok"
-	} else if urlInsta, isInsta := yt.GetInstaURL(text); isInsta {
-		url, isValid, platform = urlInsta, true, "Instagram"
-	} else {
-		valid := yt.IsUrl(u[0])
-		if !valid {
-			return "", false, ""
-		}
-		trimmedUrl := strings.TrimSpace(u[0])
-		url, isValid, platform = trimmedUrl, true, ""
-	}
-
-	if !isValid || len(url) == 0 || !yt.IsUrl(url) {
-		return "", false, ""
-	}
-	return url, isValid, platform
-}
-
 func downloadMedia(ctx *ext.Context, chatID int64, url string, platform string, sentMsgId int, longVideoDownload bool) (bool, string, string, error) {
 	var downloadFunc func(string, string) (bool, string, error)
 	timeUnix := time.Now().UnixMilli()
@@ -1262,23 +1202,4 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 			log.Printf("Не вдалося видалити прев’ю: %v", err)
 		}
 	}
-}
-
-func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
-	const errorMessageTimeout = 60 * time.Second
-
-	time.AfterFunc(errorMessageTimeout, func() {
-		ctx.DeleteMessages(chatID, []int{sentMsgId})
-	})
-}
-
-func reportFailure(ctx *ext.Context, chatID int64, sentMsgId int, text string) {
-	_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsgId,
-		Message: text,
-	})
-	if editErr != nil {
-		log.Printf("Помилка редагування повідомлення: %v", editErr)
-	}
-	deleteMsgTimer(ctx, chatID, sentMsgId)
 }
