@@ -31,10 +31,6 @@ import (
 )
 
 func init() {
-	logFile, err := os.OpenFile("bot.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		log.Fatalf("Помилка відкриття файлу логів: %v", err)
-	}
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   "bot.log",
 		MaxSize:    10, // МБ
@@ -42,7 +38,6 @@ func init() {
 		MaxAge:     28, // дні
 		Compress:   true,
 	})
-	log.SetOutput(logFile)
 
 	go startCleanupRoutine()
 }
@@ -198,7 +193,7 @@ func main() {
 
 		f, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, gifPath)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		_, err = ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
@@ -528,45 +523,20 @@ func cleanOldFiles(threshold time.Duration) error {
 		return err
 	}
 
-	audioPrefix := "audio-download-"
-	mediaPrefix := "media-download-"
-	galleryPrefix := "gallery-dl-download-"
 	lifetime := 10 * time.Minute
-	for _, file := range files {
-		if file.IsDir() && len(file.Name()) >= len(audioPrefix) && file.Name()[:len(audioPrefix)] == audioPrefix {
+	for _, prefix := range []string{"audio-download-", "media-download-", "thumbnail-download-", "gallery-dl-download-"} {
+		for _, file := range files {
+			if file.IsDir() && len(file.Name()) >= len(prefix) && file.Name()[:len(prefix)] == prefix {
 
-			info, err := file.Info()
-			if err != nil {
-				continue
-			}
+				info, err := file.Info()
+				if err != nil {
+					continue
+				}
 
-			if time.Since(info.ModTime()) > lifetime {
-				fullPath := filepath.Join(tempDir, file.Name())
-				os.RemoveAll(fullPath)
-			}
-		}
-		if file.IsDir() && len(file.Name()) >= len(mediaPrefix) && file.Name()[:len(mediaPrefix)] == mediaPrefix {
-
-			info, err := file.Info()
-			if err != nil {
-				continue
-			}
-
-			if time.Since(info.ModTime()) > lifetime {
-				fullPath := filepath.Join(tempDir, file.Name())
-				os.RemoveAll(fullPath)
-			}
-		}
-		if file.IsDir() && len(file.Name()) >= len(galleryPrefix) && file.Name()[:len(galleryPrefix)] == galleryPrefix {
-
-			info, err := file.Info()
-			if err != nil {
-				continue
-			}
-
-			if time.Since(info.ModTime()) > lifetime {
-				fullPath := filepath.Join(tempDir, file.Name())
-				os.RemoveAll(fullPath)
+				if time.Since(info.ModTime()) > lifetime {
+					fullPath := filepath.Join(tempDir, file.Name())
+					os.RemoveAll(fullPath)
+				}
 			}
 		}
 	}
@@ -691,130 +661,22 @@ func Fragment(ctx *ext.Context, update *ext.Update) error {
 }
 
 func Download(ctx *ext.Context, update *ext.Update) error {
-	chatID := tgbot.Access(ctx, update, whitelistDb)
-	if chatID == 0 {
-		log.Println("Відмова у доступі")
-		return nil
+	err := enqueue(ctx, update, false)
+	if err != nil {
+		return err
 	}
-
-	var url string
-	var platform yt.Platform
-	var isValid bool
-
-	if update.EffectiveMessage.ReplyTo != nil {
-		log.Println("Команда є відповіддю")
-
-		replyHeader, ok := update.EffectiveMessage.ReplyTo.(*tg.MessageReplyHeader)
-		if !ok {
-			log.Println("Не вдалось отримати ReplyHeader")
-			return nil
-		}
-		replyToMsgID := replyHeader.ReplyToMsgID
-		log.Printf("ReplyToMsgID: %d", replyToMsgID)
-
-		var replyText string
-
-		inputPeer := ctx.PeerStorage.GetInputPeerById(chatID)
-		switch peer := inputPeer.(type) {
-		case *tg.InputPeerChannel:
-			// Супергрупа або канал
-			msgs, err := ctx.Raw.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
-				Channel: &tg.InputChannel{
-					ChannelID:  peer.ChannelID,
-					AccessHash: peer.AccessHash,
-				},
-				ID: []tg.InputMessageClass{
-					&tg.InputMessageID{ID: replyToMsgID},
-				},
-			})
-			if err != nil {
-				log.Printf("Помилка отримання повідомлення з каналу: %v", err)
-				return err
-			}
-			channelMsgs, ok := msgs.(*tg.MessagesChannelMessages)
-			if !ok || len(channelMsgs.Messages) == 0 {
-				log.Println("Повідомлення не знайдено")
-				return nil
-			}
-			msg, ok := channelMsgs.Messages[0].(*tg.Message)
-			if !ok {
-				return nil
-			}
-			replyText = msg.Message
-
-		case *tg.InputPeerUser, *tg.InputPeerChat:
-			// Особистий чат або звичайна група
-			msgs, err := ctx.Raw.MessagesGetMessages(ctx, []tg.InputMessageClass{
-				&tg.InputMessageID{ID: replyToMsgID},
-			})
-			if err != nil {
-				log.Printf("Помилка отримання повідомлення: %v", err)
-				return err
-			}
-			msgsObj, ok := msgs.(*tg.MessagesMessages)
-			if !ok || len(msgsObj.Messages) == 0 {
-				log.Println("Повідомлення не знайдено")
-				return nil
-			}
-			msg, ok := msgsObj.Messages[0].(*tg.Message)
-			if !ok {
-				return nil
-			}
-			replyText = msg.Message
-
-		default:
-			log.Printf("Невідомий тип peer: %T", inputPeer)
-			return nil
-		}
-
-		log.Printf("ReplyToMessage text: %s", replyText)
-		if replyText == "" {
-			log.Println("ReplyToMessage не містить тексту")
-			return nil
-		}
-
-		url, isValid, platform = tgbot.UrlFromText(replyText)
-	} else {
-		log.Println("Команда не є відповіддю")
-		url, isValid, platform = tgbot.Url(update)
-		if !isValid {
-			log.Println("Невалідне URL або платформа не підтримується")
-			_, err := ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-				Message: "Некоректний URL або платформа не підтримується",
-			})
-			return err
-		}
-	}
-
-	if !yt.IsUrl(url) {
-		log.Println("Повідомлення не містить url")
-		return nil
-	}
-
-	if strings.Contains(url, "list=") {
-		url = yt.RemoveYouTubeListParam(url)
-		log.Printf("Видалено параметр list, новий URL: %s", url)
-	}
-
-	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
-	if loaded {
-		log.Printf("URL %s уже обробляється, пропускаємо", url)
-		return nil
-	}
-
-	urlQueue <- tgbot.URLRequest{
-		URL:      url,
-		Platform: platform,
-		Command:  "download",
-		Context:  ctx,
-		Update:   update,
-		Spoiler:  false,
-	}
-	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
 	return nil
 }
 
 func Spoiler(ctx *ext.Context, update *ext.Update) error {
+	err := enqueue(ctx, update, true)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func enqueue(ctx *ext.Context, update *ext.Update, spoiler bool) error {
 	chatID := tgbot.Access(ctx, update, whitelistDb)
 	if chatID == 0 {
 		log.Println("Відмова у доступі")
@@ -926,13 +788,24 @@ func Spoiler(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	urlQueue <- tgbot.URLRequest{
-		URL:      url,
-		Platform: platform,
-		Command:  "download",
-		Context:  ctx,
-		Update:   update,
-		Spoiler:  true,
+	if spoiler {
+		urlQueue <- tgbot.URLRequest{
+			URL:      url,
+			Platform: platform,
+			Command:  "download",
+			Context:  ctx,
+			Update:   update,
+			Spoiler:  true,
+		}
+	} else {
+		urlQueue <- tgbot.URLRequest{
+			URL:      url,
+			Platform: platform,
+			Command:  "download",
+			Context:  ctx,
+			Update:   update,
+			Spoiler:  false,
+		}
 	}
 	log.Printf("Додано до черги URL: %s, Platform: %s, Command: download", url, platform)
 	return nil
@@ -970,7 +843,7 @@ func AddIdToWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 			if _, err := strconv.Atoi(id); err == nil && strings.HasPrefix(username, "@") {
 				idInt64, err := strconv.ParseInt(id, 10, 64)
 				if err != nil {
-					log.Panicln("Не вдалося перетворити id з типу string на int64")
+					log.Printf("Не вдалося перетворити id з типу string на int64")
 					return err
 				}
 				err = database.InsertIntoWhitelist(db, username, idInt64)
@@ -1018,6 +891,7 @@ func GetWhitelist(ctx *ext.Context, update *ext.Update, db *sql.DB) error {
 		_, err = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 			Message: "Вайтліст пустий",
 		})
+		return fmt.Errorf("whitelist is empty")
 	}
 
 	var message string
