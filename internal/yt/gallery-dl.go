@@ -14,11 +14,9 @@ func runGalleryDl(useCookies bool, url string, platform Platform) (string, error
 	}
 
 	args := []string{
-		"-o", "overwrite=true",
 		"--no-part",
-		"-f", "{title}.{extension}",
+		"-f", "{num:>02}_{filename}.{extension}",
 		"-D", dir,
-		"-o", "directory=",
 	}
 	if useCookies {
 		args = append(args, "--cookies", cookies)
