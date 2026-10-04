@@ -49,14 +49,14 @@ func GetInstaURL(text string) (string, bool) {
 	return url, url != ""
 }
 
-func GetVideoInfo(url string, platform string) (*VideoInfo, error) {
+func GetVideoInfo(url string, platform Platform) (*VideoInfo, error) {
 	var cookies string
 	switch platform {
-	case "YouTube":
+	case YouTube:
 		cookies = "./cookies/cookiesYT.txt"
-	case "TikTok":
+	case TikTok:
 		cookies = "./cookies/cookiesTT.txt"
-	case "Instagram":
+	case Instagram:
 		cookies = "./cookies/cookiesINSTA.txt"
 	}
 

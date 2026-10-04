@@ -2,26 +2,15 @@ package yt
 
 import (
 	"log"
-	"os"
 	"os/exec"
 )
 
-func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, string, error) {
-	var platform string
-	var cookies string
-	if isTT {
-		platform = "TikTok"
-		cookies = "./cookies/cookiesTT.txt"
-	}
-	if isInsta {
-		platform = "Instagram"
-		cookies = "./cookies/cookiesINSTA.txt"
-	}
+func runGalleryDl(useCookies bool, url string, platform Platform) (string, error) {
+	cookies := cookieFiles[platform]
 
-	dir, err := os.MkdirTemp("", "gallery-dl-download-")
+	dir, err := createTempDir("gallery-dl-download-")
 	if err != nil {
-		log.Printf("Помилка створення тимчасового каталогу: %v", err)
-		return false, "", err
+		return "", err
 	}
 
 	args := []string{
@@ -40,8 +29,8 @@ func runGalleryDl(useCookies bool, url string, isTT bool, isInsta bool) (bool, s
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("gallery-dl error (%s): %v\nOutput: %s", platform, err, string(output))
-		return false, "", err
+		return "", err
 	}
 	log.Printf("gallery-dl download successful for %s", url)
-	return true, dir, nil
+	return dir, nil
 }

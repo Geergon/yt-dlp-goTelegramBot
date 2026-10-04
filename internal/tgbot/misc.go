@@ -2,7 +2,8 @@ package tgbot
 
 import (
 	"log"
-	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,14 +13,14 @@ import (
 )
 
 type platformMatcher struct {
-	name  string
-	match func(text string) (string, bool)
+	platform yt.Platform
+	match    func(text string) (string, bool)
 }
 
 var platformMatchers = []platformMatcher{
-	{"YouTube", yt.GetYoutubeURL},
-	{"TikTok", yt.GetTikTokURL},
-	{"Instagram", yt.GetInstaURL},
+	{yt.YouTube, yt.GetYoutubeURL},
+	{yt.TikTok, yt.GetTikTokURL},
+	{yt.Instagram, yt.GetInstaURL},
 }
 
 type pickFallback func(fields []string) (string, bool)
@@ -38,14 +39,34 @@ func secondField(f []string) (string, bool) {
 	return f[1], true
 }
 
-func Url(update *ext.Update) (string, bool, string) {
+func Url(update *ext.Update) (string, bool, yt.Platform) {
 	url, platform, ok := parseMediaUrl(update.EffectiveMessage.Text, secondField)
 	return url, ok, platform
 }
 
-func UrlFromText(text string) (string, bool, string) {
+func UrlFromText(text string) (string, bool, yt.Platform) {
 	url, platform, ok := parseMediaUrl(text, firstField)
 	return url, ok, platform
+}
+
+func parseMediaUrl(text string, fallback pickFallback) (url string, platform yt.Platform, ok bool) {
+	if strings.Contains(text, "/fragment") {
+		return "", yt.Unknown, false
+	}
+
+	for _, m := range platformMatchers {
+		if u, found := m.match(text); found {
+			if !yt.IsUrl(u) {
+				return "", yt.Unknown, false
+			}
+			return u, m.platform, true
+		}
+	}
+
+	if u, found := fallback(strings.Fields(text)); found && yt.IsUrl(u) {
+		return u, yt.Unknown, true
+	}
+	return "", yt.Unknown, false
 }
 
 func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
@@ -54,26 +75,6 @@ func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
 	time.AfterFunc(errorMessageTimeout, func() {
 		ctx.DeleteMessages(chatID, []int{sentMsgId})
 	})
-}
-
-func parseMediaUrl(text string, fallback pickFallback) (url, platform string, ok bool) {
-	if strings.Contains(text, "/fragment") {
-		return "", "", false
-	}
-
-	for _, m := range platformMatchers {
-		if u, found := m.match(text); found {
-			if !yt.IsUrl(u) {
-				return "", "", false
-			}
-			return u, m.name, true
-		}
-	}
-
-	if u, found := fallback(strings.Fields(text)); found && yt.IsUrl(u) {
-		return u, "", true
-	}
-	return "", "", false
 }
 
 func reportFailure(ctx *ext.Context, chatID int64, sentMsgId int, text string) {
@@ -85,4 +86,39 @@ func reportFailure(ctx *ext.Context, chatID int64, sentMsgId int, text string) {
 		log.Printf("Помилка редагування повідомлення: %v", editErr)
 	}
 	deleteMsgTimer(ctx, chatID, sentMsgId)
+}
+
+func checkAudio(platform yt.Platform, isPhoto bool, file, mediaDir string) error {
+	if !isPhoto && platform == yt.TikTok && !yt.HasAudioTrack(file) {
+		os.Remove(file)
+		return errNoAudio
+	}
+
+	if mediaDir == "" {
+		return nil
+	}
+	if info, err := os.Stat(mediaDir); err != nil || !info.IsDir() {
+		return nil
+	}
+	mp4Files, err := filepath.Glob(filepath.Join(mediaDir, "*.mp4"))
+	if err != nil {
+		log.Printf("Помилка пошуку mp4 в %s: %v", mediaDir, err)
+		return nil
+	}
+	if len(mp4Files) > 0 && !yt.HasAudioTrack(mp4Files[0]) {
+		os.Remove(mp4Files[0])
+		return errNoAudio
+	}
+	return nil
+}
+
+func tryDownload(platform yt.Platform, url string) (yt.DownloadResult, error) {
+	downloadResult, err := yt.DownloadMedia(url, platform)
+	if err != nil && !downloadResult.IsPhoto {
+		if rmErr := os.Remove(downloadResult.FilePath + ".part"); rmErr != nil && !os.IsNotExist(rmErr) {
+			log.Printf("Не вдалося видалити частковий файл: %v", rmErr)
+		}
+		return downloadResult, err
+	}
+	return downloadResult, checkAudio(platform, downloadResult.IsPhoto, downloadResult.FilePath, downloadResult.MediaDir)
 }

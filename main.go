@@ -529,10 +529,23 @@ func cleanOldFiles(threshold time.Duration) error {
 	}
 
 	audioPrefix := "audio-download-"
+	mediaPrefix := "media-download-"
 	galleryPrefix := "gallery-dl-download-"
 	lifetime := 10 * time.Minute
 	for _, file := range files {
 		if file.IsDir() && len(file.Name()) >= len(audioPrefix) && file.Name()[:len(audioPrefix)] == audioPrefix {
+
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			if time.Since(info.ModTime()) > lifetime {
+				fullPath := filepath.Join(tempDir, file.Name())
+				os.RemoveAll(fullPath)
+			}
+		}
+		if file.IsDir() && len(file.Name()) >= len(mediaPrefix) && file.Name()[:len(mediaPrefix)] == mediaPrefix {
 
 			info, err := file.Info()
 			if err != nil {
@@ -684,7 +697,8 @@ func Download(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	var url, platform string
+	var url string
+	var platform yt.Platform
 	var isValid bool
 
 	if update.EffectiveMessage.ReplyTo != nil {
@@ -807,7 +821,8 @@ func Spoiler(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	var url, platform string
+	var url string
+	var platform yt.Platform
 	var isValid bool
 
 	if update.EffectiveMessage.ReplyTo != nil {
