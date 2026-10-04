@@ -174,35 +174,59 @@ func processURLWithContext(cacheDb *sql.DB, req URLRequest) error {
 func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	viperMutex.RLock()
 	autoDownload := viper.GetBool("auto_download")
-	longVideoDownload := viper.GetBool("long_video_download")
-	duration := viper.GetString("duration")
 	viperMutex.RUnlock()
 
-	if !autoDownload {
-		return nil
-	}
-	msg := req.Update.EffectiveMessage
-	text := msg.Text
-	if strings.Contains(text, "/download") || strings.Contains(text, "/audio") || strings.Contains(text, "/fragment") {
-		return nil
-	}
-
-	durationInt, err := strconv.ParseInt(duration, 10, 64)
+	err := resolveURL(req, chatID, autoDownload, false)
 	if err != nil {
-		log.Printf("Помилка парсингу duration: %v", err)
 		return err
 	}
+	return nil
+}
 
-	if req.Platform == yt.YouTube {
-		info, err := yt.GetVideoInfo(req.URL, req.Platform)
-		if err == nil && int(info.Duration) >= int(durationInt) && !longVideoDownload {
-			log.Printf("Відео занадто довге: %d секунд", info.Duration)
+func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
+	err := resolveURL(req, chatID, false, true)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func resolveURL(req URLRequest, chatID int64, autoDownload bool, manualDownload bool) error {
+	if autoDownload {
+		viperMutex.RLock()
+		longVideoDownload := viper.GetBool("long_video_download")
+		duration := viper.GetString("duration")
+		viperMutex.RUnlock()
+
+		msg := req.Update.EffectiveMessage
+		text := msg.Text
+		if strings.Contains(text, "/download") || strings.Contains(text, "/audio") || strings.Contains(text, "/fragment") {
 			return nil
 		}
-		if err == nil && (info.IsLive || info.WasLive) {
-			log.Println("Відео це стрім")
-			return nil
+
+		durationLimit, err := strconv.Atoi(duration)
+		if err != nil {
+			log.Printf("Помилка парсингу duration: %v", err)
+			return err
 		}
+
+		if req.Platform == yt.YouTube {
+			info, err := yt.GetVideoInfo(req.URL, req.Platform)
+			if err != nil {
+				log.Printf("Не вдалося отримати інформацію про відео: %v", err)
+			} else {
+				tooLong := !longVideoDownload && info.Duration >= durationLimit
+				isStream := info.IsLive || info.WasLive
+				if tooLong || isStream {
+					log.Printf("Пропускаємо: тривалість %d с, стрім: %t", info.Duration, isStream)
+					return nil
+				}
+			}
+		}
+	}
+
+	if !autoDownload && !manualDownload {
+		return nil
 	}
 
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -323,128 +347,6 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, thumbName, false)
 	return nil
 }
-
-func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
-	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
-		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
-	})
-	if err != nil {
-		var rpcErr *tgerr.Error
-		if errors.As(err, &rpcErr) && rpcErr.Code == 403 {
-			log.Printf("Немає прав писати в чат %d, пропускаємо", chatID)
-			return nil
-		}
-		log.Printf("Помилка надсилання початкового повідомлення: %v", err)
-		return err
-	}
-
-	sentMsgId := sentMsg.GetID()
-
-	user := req.Update.EffectiveUser()
-	username := "@" + user.Username
-	title := username + " (link)"
-	entities := []tg.MessageEntityClass{
-		&tg.MessageEntityTextURL{
-			Offset: len(username) + 1,
-			Length: 6,
-			URL:    req.URL,
-		},
-	}
-
-	if cached, ok := database.GetCachedFile(cacheDb, req.URL); ok {
-		if cached.DocID != 0 {
-			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
-			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-				ID:       sentMsgId,
-				Message:  title,
-				Entities: entities,
-				Media: &tg.InputMediaDocument{
-					Spoiler: req.Spoiler,
-					ID: &tg.InputDocument{
-						ID:            cached.DocID,
-						AccessHash:    cached.AccessHash,
-						FileReference: cached.FileReference,
-					},
-				},
-			})
-			if err == nil {
-				return nil
-			}
-			log.Printf("Document reference протух, надсилаємо файл: %v", err)
-		}
-		// Fallback на файловий кеш...
-		if _, err := os.Stat(cached.FilePath); err == nil {
-			log.Printf("Знайдено в кеші: %s", cached.FilePath)
-			images, media, thumbName, musicPath, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
-			if err == nil {
-				deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, false)
-				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, musicPath, media, chatID, sentMsgId)
-				return err
-			}
-		} else {
-			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
-			database.DeleteCachedFile(cacheDb, req.URL)
-		}
-	}
-
-	downloadResult, downloadErr := downloadMedia(req.Context, chatID, req.URL, req.Platform, sentMsgId)
-	if downloadErr != nil {
-		log.Printf("Помилка при завантаженні відео: %v", downloadErr)
-		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка завантаження: %v", downloadErr))
-		deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, "", true)
-		return downloadErr
-	}
-
-	_, err = req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsgId,
-		Message: "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]",
-	})
-	if err != nil {
-		log.Printf("Помилка редагування повідомлення: %v", err)
-		return err
-	}
-
-	images, media, thumbName, musicPath, errCheck := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, downloadResult.IsPhoto, downloadResult.FilePath, req.Spoiler, downloadResult.MediaDir)
-	if errCheck != nil {
-		log.Printf("Помилка при обробці медіа: %v", errCheck)
-		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка обробки медіа: %v", errCheck))
-		deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, thumbName, true)
-		return errCheck
-	}
-
-	_, err = req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsgId,
-		Message: "Надсилання: \n[◼◼◼◼◼◼◼◻]",
-	})
-	if err != nil {
-		log.Printf("Помилка редагування повідомлення: %v", err)
-		return err
-	}
-
-	doc, err := sendMedia(req.Context, req.Update, req.URL, downloadResult.IsPhoto, false, images, musicPath, media, chatID, sentMsgId)
-	if err != nil {
-		log.Printf("Помилка при надсиланні повідомлення: %v", err)
-		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка надсилання: %v", err))
-		deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, thumbName, true)
-		return err
-	}
-
-	if err == nil && doc != nil && !downloadResult.IsPhoto {
-		saveToCache(cacheDb, req.URL, database.CachedMedia{
-			FilePath:      downloadResult.FilePath,
-			DocID:         doc.ID,
-			AccessHash:    doc.AccessHash,
-			FileReference: doc.FileReference,
-		})
-	}
-
-	deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, thumbName, false)
-	return nil
-}
-
-// func resolveURL(ctx *ext.Context, update *ext.Update, chatID int64) (string, yt.Platform, bool) {
-
-// }
 
 func processFragment(req URLRequest, chatID int64) error {
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
