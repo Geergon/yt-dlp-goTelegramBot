@@ -50,49 +50,22 @@ func GetInstaURL(text string) (string, bool) {
 }
 
 func GetVideoInfo(url string, platform Platform) (*VideoInfo, error) {
-	var cookies string
-	switch platform {
-	case YouTube:
-		cookies = "./cookies/cookiesYT.txt"
-	case TikTok:
-		cookies = "./cookies/cookiesTT.txt"
-	case Instagram:
-		cookies = "./cookies/cookiesINSTA.txt"
+	args := []string{"-j", "--no-playlist"}
+
+	if hasCookies(platform) {
+		args = append(args, "--cookies", cookieFiles[platform])
 	}
+	args = append(args, "--", url)
 
-	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
-		cmd := exec.Command("sh", "-c", fmt.Sprintf(`yt-dlp --cookies "%s" -j "%s" | jq -c '{Duration: .duration}'`, cookies, url))
-		out, err := cmd.Output()
-		if err != nil {
-			log.Printf("помилка отримання інформації про відео: %v", err)
-			return nil, fmt.Errorf("помилка виконання команди: %v", err)
-		}
-
-		var info VideoInfo
-		if err := json.Unmarshal(out, &info); err != nil {
-			log.Printf("JSON: %s", out)
-			return nil, fmt.Errorf("помилка парсингу JSON: %v", err)
-		}
-
-		return &info, nil
-
-	} else {
-		cmd := exec.Command("sh", "-c", fmt.Sprintf(`yt-dlp -j "%s" | jq -c '{is_live: .is_live, was_live: .was_live,duration: .duration}'`, url))
-		out, err := cmd.Output()
-		if err != nil {
-			log.Printf("помилка отримання інформації про відео: %v", err)
-			return nil, fmt.Errorf("помилка виконання команди: %v", err)
-		}
-
-		var info VideoInfo
-		if err := json.Unmarshal(out, &info); err != nil {
-			log.Printf("JSON: %s", out)
-			return nil, fmt.Errorf("помилка парсингу JSON: %v", err)
-		}
-
-		return &info, nil
-
+	out, err := exec.Command("yt-dlp", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp -j: %w", err)
 	}
+	var info VideoInfo
+	if err := json.Unmarshal(out, &info); err != nil {
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+	return &info, nil
 }
 
 //	func GetVideoName(url string, info *VideoInfo) string {
@@ -155,5 +128,6 @@ func GetPhotoPathList(dir string) ([]string, bool, bool, bool, string) {
 	}
 	isExist = false
 	isVideo = false
+
 	return nil, isExist, isVideo, hasMusic, musicPath
 }
