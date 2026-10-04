@@ -195,7 +195,7 @@ func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 
 	if req.Platform == yt.YouTube {
 		info, err := yt.GetVideoInfo(req.URL, req.Platform)
-		if err == nil && info.Duration >= int(durationInt) && !longVideoDownload {
+		if err == nil && int(info.Duration) >= int(durationInt) && !longVideoDownload {
 			log.Printf("Відео занадто довге: %d секунд", info.Duration)
 			return nil
 		}
@@ -438,9 +438,13 @@ func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 		})
 	}
 
-	deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.FilePath, thumbName, false)
+	deleteMedia(req.Context, req.Update, req.URL, chatID, downloadResult.MediaDir, thumbName, false)
 	return nil
 }
+
+// func resolveURL(ctx *ext.Context, update *ext.Update, chatID int64) (string, yt.Platform, bool) {
+
+// }
 
 func processFragment(req URLRequest, chatID int64) error {
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
@@ -643,7 +647,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	fileData, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, audioPath)
 	if err != nil {
 		logErr := fmt.Sprintf("Error loading audio in Telegram: %v", err)
-		log.Printf(logErr)
+		log.Print(logErr)
 		reportFailure(req.Context, chatID, sentMsgId, logErr)
 		return err
 	}
@@ -702,7 +706,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	} else {
 		log.Printf("Тимчасовий каталог %s успішно видалено.", audioDir)
 	}
-	deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, false)
+	deleteMedia(req.Context, req.Update, req.URL, chatID, audioDir, thumbName, false)
 	return nil
 }
 
@@ -727,7 +731,7 @@ func downloadMedia(ctx *ext.Context, chatID int64, url string, platform yt.Platf
 	}
 
 	errMsg := fmt.Sprintf("Не вдалося завантажити медіа після %d спроб (%s): %v", maxAttempts, platform, downloadErr)
-	log.Printf(errMsg)
+	log.Print(errMsg)
 	if errors.Is(downloadErr, errNoAudio) {
 		errMsg = fmt.Sprintf("Відео без аудіо після %d спроб", maxAttempts)
 	}
@@ -881,6 +885,10 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			Length: 6,
 			URL:    url,
 		},
+	}
+
+	if user.Username == "" && user.FirstName != "" {
+		username = user.FirstName
 	}
 
 	imagesIsVideo := false
@@ -1130,7 +1138,7 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 		}
 	}
 	if thumbName != "" {
-		if err := os.Remove(thumbName); err != nil {
+		if err := os.RemoveAll(filepath.Dir(thumbName)); err != nil {
 			log.Printf("Не вдалося видалити прев’ю: %v", err)
 		}
 	}
