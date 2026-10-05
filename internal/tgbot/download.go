@@ -286,7 +286,8 @@ func processAudio(req URLRequest, chatID int64) error {
 
 	setProgress(req, chatID, sentMsgId, "Перевірка і формування медіа перед відправкою: \n[◼◼◼◼◼◼◻◻]")
 
-	fileData, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, audioPath)
+	up := newUploader(req.Context)
+	fileData, err := up.FromPath(req.Context, audioPath)
 	if err != nil {
 		logErr := fmt.Sprintf("Error loading audio in Telegram: %v", err)
 		log.Print(logErr)
@@ -310,7 +311,7 @@ func processAudio(req URLRequest, chatID int64) error {
 	thumbName := downloadResult.ThumbnailPath
 	if thumbName != "" {
 		if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
-			if thumbFile, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, thumbName); err == nil {
+			if thumbFile, err := newUploader(req.Context).FromPath(req.Context, thumbName); err == nil {
 				media.Thumb = thumbFile
 			} else {
 				log.Printf("Помилка завантаження прев’ю %s: %v", thumbName, err)
@@ -444,7 +445,8 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 			return nil, nil, "", "", fmt.Errorf("Файл %s є директорією", mediaFilePath)
 		}
 
-		fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFilePath)
+		up := newUploader(ctx)
+		fileData, err := up.FromPath(ctx, mediaFilePath)
 		if err != nil {
 			log.Printf("Помилка завантаження відео в Telegram: %v", err)
 			logErr := fmt.Errorf("помилка завантаження відео в Telegram: \n%v", err)
@@ -468,7 +470,7 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 		thumbPath := filepath.Join(filepath.Base(mediaFilePath), "thumb", "thumb.jpg")
 		if thumbName = thumbPath; thumbName != "" {
 			if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
-				if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
+				if thumbFile, err := newUploader(ctx).FromPath(ctx, thumbName); err == nil {
 					media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
 				} else {
 					log.Printf("Помилка завантаження прев’ю %s: %v", thumbName, err)
@@ -498,7 +500,8 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 				return nil, nil, "", "", fmt.Errorf("%s: %w", logMsg, err)
 			}
 
-			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, mediaFilePath)
+			up := newUploader(ctx)
+			fileData, err := up.FromPath(ctx, mediaFilePath)
 			if err != nil {
 				log.Printf("Помилка завантаження відео в Telegram: %v", err)
 				logErr := fmt.Errorf("помилка завантаження відео в Telegram: \n%v", err)
@@ -601,15 +604,9 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			}
 			log.Printf("Надсилаємо фото %d: %s, розмір: %d байт", i, filePath, stat.Size())
 
-			fileBytes, err := os.ReadFile(filePath)
-			if err != nil {
-				log.Printf("Помилка читання файлу %s: %v", filePath, err)
-				return nil, err
-			}
-
 			fileData, err := uploader.NewUploader(ctx.Raw).
 				WithThreads(1).
-				FromBytes(ctx, filepath.Base(filePath), fileBytes)
+				FromPath(ctx, filePath)
 			if err != nil {
 				log.Printf("Помилка завантаження фото %s: %v", filePath, err)
 				return nil, err
@@ -731,7 +728,8 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 		}
 
 		if musicPath != "" {
-			fileData, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, musicPath)
+			up := newUploader(ctx)
+			fileData, err := up.FromPath(ctx, musicPath)
 			if err != nil {
 				log.Printf("Помилка завантаження аудіо в Telegram: %v", err)
 				logErr := fmt.Errorf("помилка завантаження аудіо в Telegram: %v", err)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
+	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"github.com/spf13/viper"
 )
@@ -162,4 +163,10 @@ func setProgress(req URLRequest, chatID int64, msgID int, text string) {
 	if _, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{ID: msgID, Message: text}); err != nil {
 		log.Printf("Не вдалося оновити прогрес: %v", err)
 	}
+}
+
+func newUploader(ctx *ext.Context) *uploader.Uploader {
+	return uploader.NewUploader(ctx.Raw).
+		WithPartSize(512 * 1024).
+		WithThreads(4)
 }
