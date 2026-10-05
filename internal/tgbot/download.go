@@ -11,6 +11,7 @@ import (
 	"image/jpeg"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -173,62 +174,23 @@ func processURLWithContext(cacheDb *sql.DB, req URLRequest) error {
 
 func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	viperMutex.RLock()
-	autoDownload := viper.GetBool("auto_download")
+	enabled := viper.GetBool("auto_download")
 	viperMutex.RUnlock()
 
-	err := resolveURL(req, chatID, autoDownload, false)
-	if err != nil {
-		return err
+	if !enabled || isCommandMessage(req.Update.EffectiveMessage.Text) {
+		return nil
 	}
-	return nil
+	if shouldSkipYouTube(req) {
+		return nil
+	}
+	return downloadAndSend(cacheDb, req, chatID)
 }
 
 func processDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
-	err := resolveURL(req, chatID, false, true)
-	if err != nil {
-		return err
-	}
-	return nil
+	return downloadAndSend(cacheDb, req, chatID)
 }
 
-func resolveURL(req URLRequest, chatID int64, autoDownload bool, manualDownload bool) error {
-	if autoDownload {
-		viperMutex.RLock()
-		longVideoDownload := viper.GetBool("long_video_download")
-		duration := viper.GetString("duration")
-		viperMutex.RUnlock()
-
-		msg := req.Update.EffectiveMessage
-		text := msg.Text
-		if strings.Contains(text, "/download") || strings.Contains(text, "/audio") || strings.Contains(text, "/fragment") {
-			return nil
-		}
-
-		durationLimit, err := strconv.Atoi(duration)
-		if err != nil {
-			log.Printf("Помилка парсингу duration: %v", err)
-			return err
-		}
-
-		if req.Platform == yt.YouTube {
-			info, err := yt.GetVideoInfo(req.URL, req.Platform)
-			if err != nil {
-				log.Printf("Не вдалося отримати інформацію про відео: %v", err)
-			} else {
-				tooLong := !longVideoDownload && info.Duration >= durationLimit
-				isStream := info.IsLive || info.WasLive
-				if tooLong || isStream {
-					log.Printf("Пропускаємо: тривалість %d с, стрім: %t", info.Duration, isStream)
-					return nil
-				}
-			}
-		}
-	}
-
-	if !autoDownload && !manualDownload {
-		return nil
-	}
-
+func downloadAndSend(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 	sentMsg, err := req.Context.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "Завантаження медіа: \n[◼◼◼◼◻◻◻◻]",
 	})
@@ -243,53 +205,13 @@ func resolveURL(req URLRequest, chatID int64, autoDownload bool, manualDownload 
 	}
 	sentMsgId := sentMsg.GetID()
 
-	user := req.Update.EffectiveUser()
-	username := "@" + user.Username
-	title := username + " (link)"
-	entities := []tg.MessageEntityClass{
-		&tg.MessageEntityTextURL{
-			Offset: len(username) + 1,
-			Length: 6,
-			URL:    req.URL,
-		},
-	}
-
 	if cached, ok := database.GetCachedFile(cacheDb, req.URL); ok {
-		if cached.DocID != 0 {
-			log.Printf("Надсилання з кешу через document reference: %d", cached.DocID)
-			_, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-				ID:       sentMsgId,
-				Message:  title,
-				Entities: entities,
-				Media: &tg.InputMediaDocument{
-					Spoiler: req.Spoiler,
-					ID: &tg.InputDocument{
-						ID:            cached.DocID,
-						AccessHash:    cached.AccessHash,
-						FileReference: cached.FileReference,
-					},
-				},
-			})
-			if err == nil {
-				return nil
-			}
-			log.Printf("Document reference протух, надсилаємо файл: %v", err)
-		}
-		// Fallback на файловий кеш...
-		if _, err := os.Stat(cached.FilePath); err == nil {
-			log.Printf("Знайдено в кеші: %s", cached.FilePath)
-			images, media, thumbName, musicPath, err := mediaCheck(req.Context, chatID, sentMsgId, req.URL, req.Platform, false, cached.FilePath, req.Spoiler, "")
-			if err == nil {
-				deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, false)
-				_, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, musicPath, media, chatID, sentMsgId)
-				return err
-			}
+		ok, err := sendFromCache(cacheDb, req, chatID, sentMsg, cached)
+		if ok && err == nil {
+			return nil
 		} else {
-			log.Printf("Кешований файл не знайдено на диску, видаляємо запис: %s", cached.FilePath)
-			err = database.DeleteCachedFile(cacheDb, req.URL)
-			if err != nil {
-				return fmt.Errorf("помилка при видаленні файлового кешу")
-			}
+			log.Printf("помилка при спробі надсилання з кешу: %v", err)
+			return err
 		}
 	}
 
@@ -335,7 +257,7 @@ func resolveURL(req URLRequest, chatID int64, autoDownload bool, manualDownload 
 		return err
 	}
 
-	if err == nil && doc != nil && !downloadResult.IsPhoto {
+	if doc != nil && !downloadResult.IsPhoto {
 		saveToCache(cacheDb, req.URL, database.CachedMedia{
 			FilePath:      downloadResult.FilePath,
 			DocID:         doc.ID,

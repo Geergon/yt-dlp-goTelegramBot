@@ -4,12 +4,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/gotd/td/tg"
+	"github.com/spf13/viper"
 )
 
 type platformMatcher struct {
@@ -121,4 +123,37 @@ func tryDownload(platform yt.Platform, url string) (yt.DownloadResult, error) {
 		return downloadResult, err
 	}
 	return downloadResult, checkAudio(platform, downloadResult.IsPhoto, downloadResult.FilePath, downloadResult.MediaDir)
+}
+
+func shouldSkipYouTube(req URLRequest) bool {
+	if req.Platform != yt.YouTube {
+		return false
+	}
+	viperMutex.RLock()
+	longVideoDownload := viper.GetBool("long_video_download")
+	duration := viper.GetString("duration")
+	viperMutex.RUnlock()
+
+	limit, err := strconv.Atoi(duration)
+	if err != nil {
+		log.Printf("Помилка парсингу duration: %v", err)
+		return false
+	}
+
+	info, err := yt.GetVideoInfo(req.URL, req.Platform)
+	if err != nil {
+		log.Printf("Не вдалося отримати інформацію про відео: %v", err)
+		return false
+	}
+
+	tooLong := !longVideoDownload && info.Duration >= limit
+	isStream := info.IsLive || info.WasLive
+	if tooLong || isStream {
+		log.Printf("Пропускаємо: тривалість %d с, стрім: %t", info.Duration, isStream)
+	}
+	return tooLong || isStream
+}
+
+func isCommandMessage(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "/")
 }
