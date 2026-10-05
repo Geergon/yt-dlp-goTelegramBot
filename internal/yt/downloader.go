@@ -140,9 +140,7 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 	useCookies := hasCookies(platform)
 	output := filepath.Join(dir, "%(id)s_%(autonumber)02d.%(ext)s")
 
-	var ytdlpErr error
-
-	ytdlpErr = runYtdlp(useCookies, url, output, platform)
+	ytdlpErr := runYtdlp(useCookies, url, output, platform)
 
 	if ytdlpErr == nil {
 		if files := listMedia(dir); len(files) > 0 {

@@ -157,3 +157,9 @@ func shouldSkipYouTube(req URLRequest) bool {
 func isCommandMessage(text string) bool {
 	return strings.HasPrefix(strings.TrimSpace(text), "/")
 }
+
+func setProgress(req URLRequest, chatID int64, msgID int, text string) {
+	if _, err := req.Context.EditMessage(chatID, &tg.MessagesEditMessageRequest{ID: msgID, Message: text}); err != nil {
+		log.Printf("Не вдалося оновити прогрес: %v", err)
+	}
+}
