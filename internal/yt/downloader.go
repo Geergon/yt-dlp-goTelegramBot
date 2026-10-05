@@ -26,9 +26,10 @@ type VideoInfo struct {
 }
 
 type DownloadResult struct {
-	MediaDir string
-	FilePath string
-	IsPhoto  bool
+	MediaDir      string
+	FilePath      string
+	ThumbnailPath string
+	IsPhoto       bool
 }
 
 type Platform int
@@ -98,6 +99,7 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 	}
 
 	output := filepath.Join(dir, "%(title).100B.%(ext)s")
+	thumbPath := filepath.Join(dir, "thumb", "thumb.jpg")
 
 	args := []string{
 		"--break-on-reject",
@@ -105,6 +107,9 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 		"-f", filter,
 		"--merge-output-format", "mp4",
 		"--no-playlist",
+		"--write-thumbnail",
+		"--convert-thumbnails", "jpg",
+		"-o", "thumbnail:" + thumbPath,
 		"--output", output,
 	}
 	if useCookies {
@@ -128,7 +133,7 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 	if len(files) == 0 {
 		return DownloadResult{}, fmt.Errorf("в директорії завантаження %s відсутні файли", dir)
 	}
-	return DownloadResult{MediaDir: dir, FilePath: files[0], IsPhoto: false}, nil
+	return DownloadResult{MediaDir: dir, FilePath: files[0], ThumbnailPath: thumbPath, IsPhoto: false}, nil
 }
 
 func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
@@ -170,43 +175,6 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 	}
 
 	return DownloadResult{MediaDir: galleryDir, IsPhoto: true}, nil // Photo and video through gallery-dl
-}
-
-func GetThumb(url string, platform Platform) string {
-	dir, tempDirErr := createTempDir("thumbnail-download-")
-	if tempDirErr != nil {
-		log.Printf("failed to create thumbnail temp directory: %v", tempDirErr)
-		return ""
-	}
-	output := filepath.Join(dir, "thumb.%(ext)s")
-
-	cookies := cookieFiles[platform]
-
-	args := []string{
-		"--skip-download",
-		"--write-thumbnail",
-		"--convert-thumbnails", "jpg",
-		"--output", output,
-	}
-	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
-		log.Println("Використовуємо кукі")
-		args = append(args, "--cookies", cookies)
-	}
-	args = append(args, url)
-
-	cmd := exec.Command("yt-dlp", args...)
-
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("failed to get preview: %v", err)
-		return ""
-	}
-
-	files := listMedia(dir)
-	if len(files) != 0 {
-		return files[0]
-	}
-	return ""
 }
 
 func DownloadAudio(url string, platform Platform) ([]string, string, error) {

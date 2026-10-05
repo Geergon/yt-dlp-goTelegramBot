@@ -14,9 +14,15 @@ import (
 func runYtdlp(useCookies bool, url string, output string, platform Platform) error {
 	cookies := cookieFiles[platform]
 
+	dir := filepath.Base(output)
+	thumbPath := filepath.Join(dir, "thumb", "thumb.jpg")
+
 	args := []string{
 		// "-f", "mp4",
 		"--no-playlist",
+		"--write-thumbnail",
+		"--convert-thumbnails", "jpg",
+		"-o", "thumbnail:" + thumbPath,
 		"--js-runtimes", "node",
 		"--output", output,
 	}

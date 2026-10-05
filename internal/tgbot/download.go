@@ -307,7 +307,7 @@ func processAudio(req URLRequest, chatID int64) error {
 		},
 	}
 
-	thumbName := yt.GetThumb(req.URL, req.Platform)
+	thumbName := downloadResult.ThumbnailPath
 	if thumbName != "" {
 		if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
 			if thumbFile, err := uploader.NewUploader(req.Context.Raw).FromPath(req.Context, thumbName); err == nil {
@@ -465,7 +465,8 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 			},
 		}
 
-		if thumbName = yt.GetThumb(url, platform); thumbName != "" {
+		thumbPath := filepath.Join(filepath.Base(mediaFilePath), "thumb", "thumb.jpg")
+		if thumbName = thumbPath; thumbName != "" {
 			if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
 				if thumbFile, err := uploader.NewUploader(ctx.Raw).FromPath(ctx, thumbName); err == nil {
 					media.(*tg.InputMediaUploadedDocument).Thumb = thumbFile
