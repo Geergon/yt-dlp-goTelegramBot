@@ -94,7 +94,7 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 	// matchFilter := "!playlist"
 
 	output := filepath.Join(dir, "%(title).100B.%(ext)s")
-	thumbPath := filepath.Join(dir, "thumb", "thumb.jpg")
+	thumbPath := filepath.Join(dir, "thumb", "thumb")
 
 	args := []string{
 		"--break-on-reject",

@@ -15,7 +15,7 @@ func runYtdlp(useCookies bool, url string, output string, platform Platform) err
 	cookies := cookieFiles[platform]
 
 	dir := filepath.Base(output)
-	thumbPath := filepath.Join(dir, "thumb", "thumb.jpg")
+	thumbPath := filepath.Join(dir, "thumb", "thumb")
 
 	args := []string{
 		// "-f", "mp4",

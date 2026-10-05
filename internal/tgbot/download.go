@@ -467,7 +467,7 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 			},
 		}
 
-		thumbPath := filepath.Join(filepath.Base(mediaFilePath), "thumb", "thumb.jpg")
+		thumbPath := filepath.Join(filepath.Dir(mediaFilePath), "thumb", "thumb.jpg")
 		if thumbName = thumbPath; thumbName != "" {
 			if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
 				if thumbFile, err := newUploader(ctx).FromPath(ctx, thumbName); err == nil {
