@@ -107,6 +107,7 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 		"-f", filter,
 		"--merge-output-format", "mp4",
 		"--no-playlist",
+		"--concurrent-fragments", "4",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"-o", "thumbnail:" + thumbPath,

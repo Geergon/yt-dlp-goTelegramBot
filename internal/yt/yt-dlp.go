@@ -21,6 +21,7 @@ func runYtdlp(useCookies bool, url string, output string, platform Platform) err
 		// "-f", "mp4",
 		"--no-playlist",
 		"--write-thumbnail",
+		"--concurrent-fragments", "4",
 		"--convert-thumbnails", "jpg",
 		"-o", "thumbnail:" + thumbPath,
 		"--js-runtimes", "node",
