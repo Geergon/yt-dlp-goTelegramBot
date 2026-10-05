@@ -1,7 +1,6 @@
 package yt
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -10,6 +9,8 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 func IsUrl(str string) bool {
@@ -49,23 +50,43 @@ func GetInstaURL(text string) (string, bool) {
 	return url, url != ""
 }
 
-func GetVideoInfo(url string, platform Platform) (*VideoInfo, error) {
-	args := []string{"-j", "--no-playlist"}
+func GetVideoInfo(url string, platform Platform) (VideoInfo, error) {
+	args := []string{
+		"--skip-download",
+		"--no-playlist",
+		"--print", "%(duration|0)s %(is_live|False)s %(was_live|False)s",
+	}
 
 	if hasCookies(platform) {
 		args = append(args, "--cookies", cookieFiles[platform])
 	}
+
 	args = append(args, "--", url)
 
 	out, err := exec.Command("yt-dlp", args...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("yt-dlp -j: %w", err)
+		return VideoInfo{}, fmt.Errorf("yt-dlp -j: %w", err)
 	}
-	var info VideoInfo
-	if err := json.Unmarshal(out, &info); err != nil {
-		return nil, fmt.Errorf("parse JSON: %w", err)
+
+	fields := strings.Fields(string(out))
+	if len(fields) < 3 {
+		return VideoInfo{}, fmt.Errorf("failed to parse video duration: %w", err)
 	}
-	return &info, nil
+
+	duration, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return VideoInfo{}, fmt.Errorf("failed to parse video duration: %w", err)
+	}
+	isLive, err := strconv.ParseBool(fields[1])
+	if err != nil {
+		return VideoInfo{}, fmt.Errorf("failed to parse video info: %w", err)
+	}
+	wasLive, err := strconv.ParseBool(fields[2])
+	if err != nil {
+		return VideoInfo{}, fmt.Errorf("failed to parse video info: %w", err)
+	}
+
+	return VideoInfo{Duration: duration, IsLive: isLive, WasLive: wasLive}, nil
 }
 
 //	func GetVideoName(url string, info *VideoInfo) string {

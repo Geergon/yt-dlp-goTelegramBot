@@ -76,8 +76,6 @@ func DownloadMedia(url string, platform Platform) (DownloadResult, error) {
 func downloadYTVideo(url string) (DownloadResult, error) {
 	viperMutex.RLock()
 	filter := viper.GetString("yt-dlp_filter")
-	duration := viper.GetString("duration")
-	longVideoDownload := viper.GetBool("long_video_download")
 	viperMutex.RUnlock()
 
 	dir, tempDirErr := createTempDir("media-download-")
@@ -93,17 +91,14 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 		useCookies = true
 	}
 
-	matchFilter := "!playlist"
-	if !longVideoDownload {
-		matchFilter = fmt.Sprintf("%s & duration<%s", matchFilter, duration)
-	}
+	// matchFilter := "!playlist"
 
 	output := filepath.Join(dir, "%(title).100B.%(ext)s")
 	thumbPath := filepath.Join(dir, "thumb", "thumb.jpg")
 
 	args := []string{
 		"--break-on-reject",
-		"--match-filter", matchFilter,
+		// "--match-filter", matchFilter,
 		"-f", filter,
 		"--merge-output-format", "mp4",
 		"--no-playlist",
