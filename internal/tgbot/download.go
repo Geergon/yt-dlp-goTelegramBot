@@ -189,7 +189,7 @@ func downloadAndSend(cacheDb *sql.DB, req URLRequest, chatID int64) error {
 
 	setProgress(req, chatID, sentMsgId, "Надсилання: \n[◼◼◼◼◼◼◼◻]")
 
-	doc, err := sendMedia(req.Context, req.Update, req.URL, downloadResult.IsPhoto, false, images, musicPath, media, chatID, sentMsgId)
+	doc, err := sendMedia(req, downloadResult.IsPhoto, false, images, musicPath, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка надсилання: %v", err))
@@ -251,7 +251,7 @@ func processFragment(req URLRequest, chatID int64) error {
 
 	setProgress(req, chatID, sentMsgId, "Надсилання: \n[◼◼◼◼◼◼◼◻]")
 
-	_, err = sendMedia(req.Context, req.Update, req.URL, downloadResult.IsPhoto, false, images, musicPath, media, chatID, sentMsgId)
+	_, err = sendMedia(req, downloadResult.IsPhoto, false, images, musicPath, media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні повідомлення: %v", err)
 		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка надсилання: %v", err))
@@ -307,22 +307,22 @@ func processAudio(req URLRequest, chatID int64) error {
 		},
 	}
 
-	thumbName := downloadResult.ThumbnailPath
-	if thumbName != "" {
-		if thumbFileStat, err := os.Stat(thumbName); err == nil && !thumbFileStat.IsDir() {
-			if thumbFile, err := newUploader(req.Context).FromPath(req.Context, thumbName); err == nil {
+	thumbPath := downloadResult.ThumbnailPath
+	if thumbPath != "" {
+		if thumbFileStat, err := os.Stat(thumbPath); err == nil && !thumbFileStat.IsDir() {
+			if thumbFile, err := newUploader(req.Context).FromPath(req.Context, thumbPath); err == nil {
 				media.Thumb = thumbFile
 			} else {
-				log.Printf("Помилка завантаження прев’ю %s: %v", thumbName, err)
+				log.Printf("Помилка завантаження прев’ю %s: %v", thumbPath, err)
 			}
 		} else {
-			log.Printf("Прев’ю недоступне або є помилкою: %s", thumbName)
+			log.Printf("Прев’ю недоступне або є помилкою: %s", thumbPath)
 		}
 	}
 
 	setProgress(req, chatID, sentMsgId, "Надсилання: \n[◼◼◼◼◼◼◼◻]")
 
-	_, err = sendMedia(req.Context, req.Update, req.URL, false, true, nil, "", media, chatID, sentMsgId)
+	_, err = sendMedia(req, false, true, nil, "", media, chatID, sentMsgId)
 	if err != nil {
 		log.Printf("Помилка при надсиланні аудіо: %v", err)
 		if err := os.RemoveAll(audioDir); err != nil {
@@ -332,11 +332,11 @@ func processAudio(req URLRequest, chatID int64) error {
 		}
 
 		reportFailure(req.Context, chatID, sentMsgId, fmt.Sprintf("Помилка надсилання аудіо: %v", err))
-		deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, true)
+		deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbPath, true)
 		return err
 	}
 
-	deleteMedia(req.Context, req.Update, req.URL, chatID, audioDir, thumbName, false)
+	deleteMedia(req.Context, req.Update, req.URL, chatID, audioDir, thumbPath, false)
 	return nil
 }
 
@@ -546,7 +546,12 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 	return images, media, thumbName, "", nil
 }
 
-func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, isAudio bool, images []string, musicPath string, media tg.InputMediaClass, chatID int64, sentMsgId int) (*tg.Document, error) {
+func sendMedia(req URLRequest, isPhoto bool, isAudio bool, images []string, musicPath string, media tg.InputMediaClass, chatID int64, sentMsgId int) (*tg.Document, error) {
+	ctx := req.Context
+	update := req.Update
+	spoiler := req.Spoiler
+	url := req.URL
+
 	user := update.EffectiveUser()
 	username := "@" + user.Username
 	title := username + " (link)"
@@ -729,16 +734,19 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 				return nil, logErr
 			}
 
+			log.Printf("music path: %s", musicPath)
 			name := filepath.Base(musicPath)
+			log.Printf("music name: %s", name)
+			log.Printf("music name with trim suffix: %s", strings.TrimSuffix(name, filepath.Ext(name)))
 			media := &tg.InputMediaUploadedDocument{
 				File:     fileData,
 				MimeType: "audio/mpeg",
 				Attributes: []tg.DocumentAttributeClass{
 					&tg.DocumentAttributeAudio{
-						Title: strings.TrimSuffix(name, filepath.Ext(name)),
+						Title: musicPath,
 					},
 					&tg.DocumentAttributeFilename{
-						FileName: filepath.Base(musicPath),
+						FileName: name,
 					},
 				},
 			}

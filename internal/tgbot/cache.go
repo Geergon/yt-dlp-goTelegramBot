@@ -105,7 +105,7 @@ func sendFromCache(cacheDb *sql.DB, req URLRequest, chatID int64, sentMsgId int,
 		return false, err
 	}
 
-	doc, err := sendMedia(req.Context, req.Update, req.URL, false, false, images, musicPath, media, chatID, sentMsgId)
+	doc, err := sendMedia(req, false, false, images, musicPath, media, chatID, sentMsgId)
 	deleteMedia(req.Context, req.Update, req.URL, chatID, "", thumbName, err != nil)
 	if err != nil {
 		return true, err
