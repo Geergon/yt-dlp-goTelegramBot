@@ -664,6 +664,7 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 						AccessHash:    photo.AccessHash,
 						FileReference: photo.FileReference,
 					},
+					Spoiler: spoiler,
 				},
 				Message:  message,
 				Entities: entities,
