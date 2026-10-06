@@ -31,6 +31,12 @@ type DownloadResult struct {
 	IsPhoto       bool
 }
 
+type DownloadAudioResult struct {
+	AudioDir      string
+	AudioName     string
+	ThumbnailPath string
+}
+
 type Platform int
 
 const (
@@ -168,12 +174,13 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 	return DownloadResult{MediaDir: galleryDir, IsPhoto: true}, nil // Photo and video through gallery-dl
 }
 
-func DownloadAudio(url string, platform Platform) ([]string, string, error) {
+func DownloadAudio(url string, platform Platform) (DownloadAudioResult, error) {
 	dir, tempDirErr := createTempDir("audio-download-")
 	if tempDirErr != nil {
-		return nil, "", tempDirErr
+		return DownloadAudioResult{}, tempDirErr
 	}
 
+	thumbPath := filepath.Join(dir, "thumb", "thumb")
 	audioDir := os.DirFS(dir)
 
 	cookies := cookieFiles[platform]
@@ -182,6 +189,9 @@ func DownloadAudio(url string, platform Platform) ([]string, string, error) {
 		"--extract-audio",
 		"--embed-thumbnail",
 		"--embed-metadata",
+		"--write-thumbnail",
+		"--convert-thumbnails", "jpg",
+		"-o", "thumbnail:" + thumbPath,
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
 		"-o", path.Join(dir, "%(title)s.%(ext)s"),
@@ -198,22 +208,22 @@ func DownloadAudio(url string, platform Platform) ([]string, string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("yt-dlp error (%s): %v\nOutput: %s", platform, err, string(output))
-		return nil, "", err
+		return DownloadAudioResult{}, err
 	}
 	log.Printf("yt-dlp download successful for %s", url)
 
 	newMp3Files, err := fs.Glob(audioDir, "*.mp3")
 	if err != nil {
 		log.Printf("Помилка при повторному отриманні списку файлів: %v", err)
-		return nil, "", err
+		return DownloadAudioResult{}, err
 	}
 	if len(newMp3Files) == 0 {
 		log.Printf("Не знайдено MP3-файлів після завантаження для URL: %s", url)
-		return nil, "", fmt.Errorf("не знайдено MP3-файлів після завантаження")
+		return DownloadAudioResult{}, fmt.Errorf("не знайдено MP3-файлів після завантаження")
 	}
 
 	log.Printf("Знайдено аудіофайли: %v", newMp3Files)
-	return newMp3Files, dir, nil
+	return DownloadAudioResult{AudioName: newMp3Files[0], AudioDir: dir, ThumbnailPath: filepath.Join(dir, "thumb", "thumb.jpg")}, nil
 }
 
 func createTempDir(name string) (dir string, ok error) {

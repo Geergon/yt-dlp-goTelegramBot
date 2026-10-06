@@ -376,9 +376,10 @@ func downloadAudio(url string, platform yt.Platform) (yt.DownloadResult, error) 
 	var audioName string
 	var audioDir string
 	var audioPath string
+	var audioThumb string
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		audio, musicDir, err := yt.DownloadAudio(url, platform)
+		downloadAudioResult, err := yt.DownloadAudio(url, platform)
 		if err != nil {
 			log.Printf("attempt №%d (%s) to downloading audio failed: %v", attempt, platform, err)
 			downloadErr = err
@@ -386,25 +387,17 @@ func downloadAudio(url string, platform yt.Platform) (yt.DownloadResult, error) 
 				log.Printf("wait %v seconds before next try...", retryDelay)
 				time.Sleep(retryDelay)
 			}
-			if musicDir != "" {
-				_ = os.RemoveAll(musicDir)
+			if downloadAudioResult.AudioDir != "" {
+				_ = os.RemoveAll(downloadAudioResult.AudioDir)
 			}
 			continue
 		}
 
-		if len(audio) == 0 {
-			log.Printf("audio file after downloading not found: %s (attempt %d)", url, attempt)
-			downloadErr = fmt.Errorf("audio file not found")
-			if attempt < maxAttempts {
-				log.Printf("wait %v seconds before next try...", retryDelay)
-				time.Sleep(retryDelay)
-			}
-			continue
-		}
+		audioName = downloadAudioResult.AudioName
+		audioDir = downloadAudioResult.AudioDir
+		audioPath = filepath.Join(audioDir, audioName)
+		audioThumb = downloadAudioResult.ThumbnailPath
 
-		audioName = audio[0]
-		audioDir = musicDir
-		audioPath = filepath.Join(musicDir, audioName)
 		log.Printf("audio successfully downloaded on attempt №%d: %s", attempt, audioName)
 		downloadErr = nil
 		break
@@ -416,7 +409,7 @@ func downloadAudio(url string, platform yt.Platform) (yt.DownloadResult, error) 
 		return yt.DownloadResult{}, errMsg
 	}
 
-	return yt.DownloadResult{FilePath: audioPath, MediaDir: audioDir, IsPhoto: false}, downloadErr
+	return yt.DownloadResult{FilePath: audioPath, MediaDir: audioDir, IsPhoto: false, ThumbnailPath: audioThumb}, downloadErr
 }
 
 func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool, mediaFilePath string, spoiler bool, galleryDir string) ([]string, tg.InputMediaClass, string, string, error) {
