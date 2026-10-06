@@ -39,13 +39,13 @@ func GetYoutubeURL(text string) (string, bool) {
 }
 
 func GetTikTokURL(text string) (string, bool) {
-	ttr := regexp.MustCompile(`((http(s)?:\/\/)?(www\.|m\.|vm\.|vt\.)?tiktok\.com\/((h5\/share\/usr\/|v\/|@[A-Za-z0-9_\-]+\/(video|photo)\/|embed\/|trending\?shareId=|share\/user\/)?[A-Za-z0-9_\-]+\/?)(?:\?[^ ]*)?)`)
+	ttr := regexp.MustCompile(`(:?https?:\/\/)?(:?www\.|m\.|vm\.|vt\.)?tiktok\.com\/(:?(:?[a-zA-Z0-9._-]+\/?)|(:?@[a-zA-Z0-9._]+\/(:?photo|video)+\/\d+\?[\S]+))`)
 	url := ttr.FindString(text)
 	return url, url != ""
 }
 
 func GetInstaURL(text string) (string, bool) {
-	ir := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(reel|p|tv|stories)\/[A-Za-z0-9_\-\.]+\/?(\?[^ ]*)?(#[^ ]*)?`)
+	ir := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(reel|p|tv|stories)\/[A-Za-z0-9_\-\.]+\/?\??[\S]*`)
 	url := ir.FindString(text)
 	return url, url != ""
 }
