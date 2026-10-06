@@ -76,7 +76,7 @@ func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
 	const errorMessageTimeout = 60 * time.Second
 
 	time.AfterFunc(errorMessageTimeout, func() {
-		ctx.DeleteMessages(chatID, []int{sentMsgId})
+		_ = ctx.DeleteMessages(chatID, []int{sentMsgId})
 	})
 }
 
@@ -93,7 +93,7 @@ func reportFailure(ctx *ext.Context, chatID int64, sentMsgId int, text string) {
 
 func checkAudio(platform yt.Platform, isPhoto bool, file, mediaDir string) error {
 	if !isPhoto && platform == yt.TikTok && !yt.HasAudioTrack(file) {
-		os.Remove(file)
+		_ = os.Remove(file)
 		return errNoAudio
 	}
 
@@ -109,7 +109,7 @@ func checkAudio(platform yt.Platform, isPhoto bool, file, mediaDir string) error
 		return nil
 	}
 	if len(mp4Files) > 0 && !yt.HasAudioTrack(mp4Files[0]) {
-		os.Remove(mp4Files[0])
+		_ = os.Remove(mp4Files[0])
 		return errNoAudio
 	}
 	return nil

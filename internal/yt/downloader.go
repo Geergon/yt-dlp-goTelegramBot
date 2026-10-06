@@ -151,13 +151,13 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 	}
 
 	// yt-dlp failed, delete temp dir
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 
 	log.Printf("Trying to download URL %s through gallery-dl (%s) due to yt-dlp error: %v", url, platform, ytdlpErr)
 	galleryDir, galleryErr := runGalleryDl(useCookies, url, platform)
 	if galleryErr != nil || len(listMedia(galleryDir)) == 0 {
 		if galleryDir != "" {
-			os.RemoveAll(galleryDir)
+			_ = os.RemoveAll(galleryDir)
 		}
 		return DownloadResult{}, fmt.Errorf("gallery-dl failed after yt-dlp error: %w", galleryErr)
 	}
@@ -165,7 +165,7 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 	files := listMedia(galleryDir)
 	if len(files) == 0 {
 		if galleryDir != "" {
-			os.RemoveAll(galleryDir)
+			_ = os.RemoveAll(galleryDir)
 		}
 		return DownloadResult{}, fmt.Errorf("no media found for %s: %w", url, os.ErrNotExist)
 	}

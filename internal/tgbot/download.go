@@ -361,9 +361,9 @@ func downloadMedia(url string, platform yt.Platform) (yt.DownloadResult, error) 
 		}
 	}
 
-	err := fmt.Errorf("Не вдалося завантажити медіа після %d спроб (%s): %w", maxAttempts, platform, downloadErr)
+	err := fmt.Errorf("не вдалося завантажити медіа після %d спроб (%s): %w", maxAttempts, platform, downloadErr)
 	if errors.Is(downloadErr, errNoAudio) {
-		err = fmt.Errorf("Відео без аудіо після %d спроб", maxAttempts)
+		err = fmt.Errorf("відео без аудіо після %d спроб", maxAttempts)
 	}
 	log.Print(err)
 	return downloadResult, err
@@ -388,7 +388,7 @@ func downloadAudio(url string, platform yt.Platform) (yt.DownloadResult, error) 
 				time.Sleep(retryDelay)
 			}
 			if musicDir != "" {
-				os.RemoveAll(musicDir)
+				_ = os.RemoveAll(musicDir)
 			}
 			continue
 		}
@@ -442,7 +442,7 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 
 		if file.IsDir() {
 			log.Printf("Файл %s є директорією", mediaFilePath)
-			return nil, nil, "", "", fmt.Errorf("Файл %s є директорією", mediaFilePath)
+			return nil, nil, "", "", fmt.Errorf("файл %s є директорією", mediaFilePath)
 		}
 
 		up := newUploader(ctx)
@@ -483,7 +483,7 @@ func mediaCheck(ctx *ext.Context, url string, platform yt.Platform, isPhoto bool
 		images, isExist, isVideo, hasMusic, musicPath = yt.GetPhotoPathList(galleryDir)
 		if !isExist {
 			log.Println("Помилка при завантаженні фотографій. Їх не існує")
-			return nil, nil, "", "", fmt.Errorf("Помилка при завантаженні фотографій")
+			return nil, nil, "", "", fmt.Errorf("помилка при завантаженні фотографій")
 		}
 		if isVideo {
 			if len(images) == 0 {
@@ -662,7 +662,7 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 			}
 
 			var randomID int64
-			binary.Read(rand.Reader, binary.LittleEndian, &randomID)
+			_ = binary.Read(rand.Reader, binary.LittleEndian, &randomID)
 
 			multiMedia = append(multiMedia, tg.InputSingleMedia{
 				RandomID: randomID,
@@ -761,7 +761,7 @@ func sendMedia(ctx *ext.Context, update *ext.Update, url string, isPhoto bool, i
 
 	} else if isAudio {
 
-		ctx.DeleteMessages(chatID, []int{sentMsgId})
+		_ = ctx.DeleteMessages(chatID, []int{sentMsgId})
 		_, err := ctx.SendMedia(chatID, &tg.MessagesSendMediaRequest{
 			Media: media,
 		})
