@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 )
 
 func runYtdlp(useCookies bool, url string, output string, platform Platform) error {
@@ -69,9 +69,7 @@ func HasAudioTrack(filePath string) bool {
 }
 
 func DownloadFragment(url, fragment string) (DownloadResult, error) {
-	viperMutex.RLock()
-	filter := viper.GetString("yt-dlp_filter")
-	viperMutex.RUnlock()
+	filter := config.GetString("yt-dlp_filter")
 
 	dir, tempDirErr := createTempDir("media-download-")
 	if tempDirErr != nil {

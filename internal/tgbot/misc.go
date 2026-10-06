@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"github.com/spf13/viper"
 )
 
 type platformMatcher struct {
@@ -130,10 +130,8 @@ func shouldSkipYouTube(req URLRequest) bool {
 	if req.Platform != yt.YouTube {
 		return false
 	}
-	viperMutex.RLock()
-	longVideoDownload := viper.GetBool("long_video_download")
-	duration := viper.GetString("duration")
-	viperMutex.RUnlock()
+	longVideoDownload := config.GetBool("long_video_download")
+	duration := config.GetString("duration")
 
 	limit, err := strconv.Atoi(duration)
 	if err != nil {

@@ -9,9 +9,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
 
-	"github.com/spf13/viper"
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 )
 
 type DownloadRequest struct {
@@ -62,8 +61,6 @@ var cookieFiles = map[Platform]string{
 	YouTube:   "./cookies/cookiesYT.txt",
 }
 
-var viperMutex sync.RWMutex
-
 func DownloadMedia(url string, platform Platform) (DownloadResult, error) {
 	switch platform {
 	case YouTube:
@@ -74,9 +71,7 @@ func DownloadMedia(url string, platform Platform) (DownloadResult, error) {
 }
 
 func downloadYTVideo(url string) (DownloadResult, error) {
-	viperMutex.RLock()
-	filter := viper.GetString("yt-dlp_filter")
-	viperMutex.RUnlock()
+	filter := config.GetString("yt-dlp_filter")
 
 	dir, tempDirErr := createTempDir("media-download-")
 	if tempDirErr != nil {

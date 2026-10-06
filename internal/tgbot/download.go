@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
@@ -21,7 +22,6 @@ import (
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
-	"github.com/spf13/viper"
 )
 
 type URLRequest struct {
@@ -124,9 +124,8 @@ func processURLWithContext(cacheDb *sql.DB, req URLRequest) error {
 }
 
 func processAutoDownload(cacheDb *sql.DB, req URLRequest, chatID int64) error {
-	viperMutex.RLock()
-	enabled := viper.GetBool("auto_download")
-	viperMutex.RUnlock()
+
+	enabled := config.GetBool("auto_download")
 
 	if !enabled || isCommandMessage(req.Update.EffectiveMessage.Text) {
 		return nil
@@ -790,9 +789,8 @@ func deleteMedia(ctx *ext.Context, update *ext.Update, url string, chatID int64,
 	msg := update.EffectiveMessage
 	text := msg.Text
 
-	viperMutex.RLock()
-	deleteURL := viper.GetBool("delete_url")
-	viperMutex.RUnlock()
+	deleteURL := config.GetBool("delete_url")
+
 	if deleteURL && !fail {
 		if strings.TrimSpace(text) == url {
 			log.Printf("Спроба видалити повідомлення (ID: %d, ChatID: %d) з URL: %s", msg.ID, chatID, url)

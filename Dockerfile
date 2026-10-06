@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.* ./ 
 RUN go mod download
 COPY . .
-RUN go build -o main main.go
+RUN go build -o main .
 
 FROM debian:bookworm-slim
 COPY updatebot ./

@@ -3,20 +3,19 @@ package tgbot
 import (
 	"log"
 
+	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/gotd/td/tg"
-	"github.com/spf13/viper"
 )
 
 func Settings(ctx *ext.Context, update *ext.Update) error {
 	chatID := update.EffectiveChat().GetID()
 
-	viperMutex.RLock()
 	rows := []tg.KeyboardButtonRow{
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Автозавантаження відео: " + boolToEmoji(viper.GetBool("auto_download")),
+					Text: "Автозавантаження відео: " + boolToEmoji(config.GetBool("auto_download")),
 					Data: []byte("cb_settings_auto_download"),
 				},
 			},
@@ -24,7 +23,7 @@ func Settings(ctx *ext.Context, update *ext.Update) error {
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Видалення посилань: " + boolToEmoji(viper.GetBool("delete_url")),
+					Text: "Видалення посилань: " + boolToEmoji(config.GetBool("delete_url")),
 					Data: []byte("cb_settings_delete_links"),
 				},
 			},
@@ -32,13 +31,12 @@ func Settings(ctx *ext.Context, update *ext.Update) error {
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Завантаження довгих відео: " + boolToEmoji(viper.GetBool("long_video_download")),
+					Text: "Завантаження довгих відео: " + boolToEmoji(config.GetBool("long_video_download")),
 					Data: []byte("cb_settings_long_video_download"),
 				},
 			},
 		},
 	}
-	viperMutex.RUnlock()
 
 	_, _ = ctx.SendMessage(chatID, &tg.MessagesSendMessageRequest{
 		Message: "⚙️ Налаштування бота:\nВиберіть опцію для увімкнення/вимкнення.",
@@ -63,35 +61,23 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 	data := callback.Data
 	messageID := callback.MsgID
 
-	viperMutex.Lock()
-	autoDownload := viper.GetBool("auto_download")
-	deleteUrl := viper.GetBool("delete_url")
-	longVideoDownload := viper.GetBool("long_video_download")
 	switch string(data) {
 	case "cb_settings_auto_download":
-		viper.Set("auto_download", !autoDownload)
+		config.ToggleBool("auto_download")
 	case "cb_settings_delete_links":
-		viper.Set("delete_url", !deleteUrl)
+		config.ToggleBool("delete_url")
 	case "cb_settings_long_video_download":
-		viper.Set("long_video_download", !longVideoDownload)
+		config.ToggleBool("long_video_download")
 	default:
 		log.Printf("Невідомий callback: %s", data)
-		viperMutex.Unlock()
 		return nil
 	}
-	if err := viper.WriteConfig(); err != nil {
-		log.Printf("Помилка збереження конфігурації: %v", err)
-		viperMutex.Unlock()
-		return err
-	}
-	viperMutex.Unlock()
 
-	viperMutex.RLock()
 	rows := []tg.KeyboardButtonRow{
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Автозавантаження відео: " + boolToEmoji(viper.GetBool("auto_download")),
+					Text: "Автозавантаження відео: " + boolToEmoji(config.GetBool("auto_download")),
 					Data: []byte("cb_settings_auto_download"),
 				},
 			},
@@ -99,7 +85,7 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Видалення посилань: " + boolToEmoji(viper.GetBool("delete_url")),
+					Text: "Видалення посилань: " + boolToEmoji(config.GetBool("delete_url")),
 					Data: []byte("cb_settings_delete_links"),
 				},
 			},
@@ -107,13 +93,12 @@ func SettingsCallback(ctx *ext.Context, u *ext.Update) error {
 		{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{
-					Text: "Завантаження довгих відео: " + boolToEmoji(viper.GetBool("long_video_download")),
+					Text: "Завантаження довгих відео: " + boolToEmoji(config.GetBool("long_video_download")),
 					Data: []byte("cb_settings_long_video_download"),
 				},
 			},
 		},
 	}
-	viperMutex.RUnlock()
 
 	_, _ = ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
 		ID:      messageID,
