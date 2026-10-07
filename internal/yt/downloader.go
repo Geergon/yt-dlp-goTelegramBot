@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -98,7 +97,7 @@ func downloadYTVideo(url string) (DownloadResult, error) {
 	thumbPath := filepath.Join(dir, "thumb", "thumb")
 
 	args := []string{
-		"--break-on-reject",
+		// "--break-on-reject",
 		// "--match-filter", matchFilter,
 		"-f", filter,
 		"--merge-output-format", "mp4",
@@ -146,7 +145,7 @@ func downloadAnyMedia(url string, platform Platform) (DownloadResult, error) {
 
 	if ytdlpErr == nil {
 		if files := listMedia(dir); len(files) > 0 {
-			return DownloadResult{MediaDir: dir, FilePath: files[0], IsPhoto: false}, nil
+			return DownloadResult{MediaDir: dir, FilePath: files[0], IsPhoto: false, ThumbnailPath: filepath.Join(dir, "thumb", "thumb.jpg")}, nil
 		}
 		log.Printf("yt-dlp succeeded but no files in %s for %s", dir, url)
 	}
@@ -194,7 +193,7 @@ func DownloadAudio(url string, platform Platform) (DownloadAudioResult, error) {
 		"-o", "thumbnail:" + thumbPath,
 		"--audio-format", "mp3",
 		"--audio-quality", "192K",
-		"-o", path.Join(dir, "%(title)s.%(ext)s"),
+		"-o", filepath.Join(dir, "%(title)s.%(ext)s"),
 	}
 
 	if _, err := os.Stat(cookies); !os.IsNotExist(err) {
