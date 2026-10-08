@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/database"
 	"github.com/glebarez/sqlite"
+	"github.com/gotd/contrib/middleware/floodwait"
+	"github.com/gotd/td/telegram"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/celestix/gotgproto"
@@ -26,8 +30,6 @@ func init() {
 		MaxAge:     28, // дні
 		Compress:   true,
 	})
-
-	go startCleanupRoutine()
 }
 
 var (
@@ -37,6 +39,8 @@ var (
 
 func main() {
 	config.SetConfig()
+
+	go startCleanupRoutine()
 
 	appId, err := strconv.Atoi(os.Getenv("APP_ID"))
 	if err != nil {
@@ -68,6 +72,10 @@ func main() {
 
 	go startCacheCleanup(cacheDb)
 
+	waiter := floodwait.NewWaiter().WithMaxRetries(5).WithMaxWait(time.Minute).WithCallback(func(ctx context.Context, wait floodwait.FloodWait) {
+		log.Printf("FLOOD_WAIT: чекаємо %v", wait.Duration)
+	})
+
 	client, err := gotgproto.NewClient(
 		// Get AppID from https://my.telegram.org/apps
 		appId,
@@ -77,7 +85,17 @@ func main() {
 		gotgproto.ClientTypeBot(botToken),
 		// Optional parameters of client
 		&gotgproto.ClientOpts{
-			Session: sessionMaker.SqlSession(sqlite.Open("./db/session")),
+			Session:     sessionMaker.SqlSession(sqlite.Open("./db/session")),
+			Middlewares: []telegram.Middleware{waiter},
+			RunMiddleware: func(
+				origRun func(ctx context.Context, f func(ctx context.Context) error) error,
+				ctx context.Context,
+				f func(ctx context.Context) error,
+			) error {
+				return origRun(ctx, func(ctx context.Context) error {
+					return waiter.Run(ctx, f)
+				})
+			},
 		},
 	)
 	if err != nil {

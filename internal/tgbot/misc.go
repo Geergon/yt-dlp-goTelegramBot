@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/config"
@@ -18,6 +19,22 @@ import (
 type platformMatcher struct {
 	platform yt.Platform
 	match    func(text string) (string, bool)
+}
+
+type stage struct {
+	mu   sync.Mutex
+	done bool
+	t    *time.Timer
+}
+
+type progress struct{ last time.Time }
+
+func (p *progress) set(req URLRequest, chatID int64, msgID int, text string) {
+	if time.Since(p.last) < 3*time.Second {
+		return
+	}
+	p.last = time.Now()
+	setProgress(req, chatID, msgID, text)
 }
 
 var platformMatchers = []platformMatcher{
@@ -81,10 +98,8 @@ func deleteMsgTimer(ctx *ext.Context, chatID int64, sentMsgId int) {
 }
 
 func reportFailure(ctx *ext.Context, chatID int64, sentMsgId int, text string) {
-	_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{
-		ID:      sentMsgId,
-		Message: text,
-	})
+	_, editErr := ctx.EditMessage(chatID, &tg.MessagesEditMessageRequest{ID: sentMsgId, Message: text})
+
 	if editErr != nil {
 		log.Printf("Помилка редагування повідомлення: %v", editErr)
 	}
@@ -167,4 +182,21 @@ func newUploader(ctx *ext.Context) *uploader.Uploader {
 	return uploader.NewUploader(ctx.Raw).
 		WithPartSize(512 * 1024).
 		WithThreads(4)
+}
+
+func showAfter(req URLRequest, chatID int64, msgID int, delay time.Duration, text string) (stop func()) {
+	s := &stage{}
+	s.t = time.AfterFunc(delay, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if !s.done {
+			setProgress(req, chatID, msgID, text)
+		}
+	})
+	return func() {
+		s.t.Stop()
+		s.mu.Lock()
+		s.done = true
+		s.mu.Unlock()
+	}
 }
