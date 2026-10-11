@@ -10,6 +10,7 @@ import (
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/tgbot"
 	"github.com/Geergon/yt-dlp-goTelegramBot/internal/yt"
 	"github.com/celestix/gotgproto/ext"
+	"github.com/celestix/gotgproto/types"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 )
@@ -43,30 +44,39 @@ func OnText(ctx *ext.Context, update *ext.Update) error {
 		return nil
 	}
 
-	url, isValid, platform := tgbot.Url(update)
+	switch update.EffectiveChat().(type) {
+	case *types.User:
+		url := update.EffectiveMessage.Text
+		_, _, platform := tgbot.Url(update)
+		if yt.IsUrl(url) {
+			urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "download", Context: ctx, Update: update, Spoiler: false}
+		}
+	case *types.Chat, *types.Channel:
+		url, isValid, platform := tgbot.Url(update)
 
-	if update.EffectiveMessage.EditDate != 0 {
-		return nil
+		if update.EffectiveMessage.EditDate != 0 {
+			return nil
+		}
+
+		if !isValid {
+			return nil
+		}
+
+		if strings.Contains(url, "list=") {
+			url = yt.RemoveYouTubeListParam(url)
+			log.Printf("Видалено параметр list, новий URL: %s", url)
+		}
+
+		// Перевіряємо, чи URL уже обробляється
+		_, loaded := processingURLs.LoadOrStore(url, struct{}{})
+		if loaded {
+			log.Printf("URL %s уже обробляється, пропускаємо", url)
+			return nil
+		}
+
+		// Додаємо URL до черги
+		urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: update, Spoiler: false}
 	}
-
-	if !isValid {
-		return nil
-	}
-
-	if strings.Contains(url, "list=") {
-		url = yt.RemoveYouTubeListParam(url)
-		log.Printf("Видалено параметр list, новий URL: %s", url)
-	}
-
-	// Перевіряємо, чи URL уже обробляється
-	_, loaded := processingURLs.LoadOrStore(url, struct{}{})
-	if loaded {
-		log.Printf("URL %s уже обробляється, пропускаємо", url)
-		return nil
-	}
-
-	// Додаємо URL до черги
-	urlQueue <- tgbot.URLRequest{URL: url, Platform: platform, Command: "auto", Context: ctx, Update: update, Spoiler: false}
 	return nil
 }
 
